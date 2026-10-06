@@ -77,18 +77,35 @@ OpenAPI 3.1 sur `/api/v1/openapi.json`.
 | `npm run db:deploy` | Appliquer les migrations |
 | `npm run admin:create` | Créer ou promouvoir le super administrateur |
 
-## Déployer
+## Déployer (Railway)
 
 Les octets passent par le serveur — les liens Drive ne sont jamais donnés
-aux clients — : il faut un serveur Node **permanent** (Railway, VPS…), pas
-des fonctions éphémères, qui limitent la taille des corps et la durée des
-réponses. Le build produit une sortie `standalone`.
+aux clients — : il faut un serveur Node **permanent**, pas des fonctions
+éphémères, qui limitent la taille des corps et la durée des réponses.
+`railway.json` décrit le déploiement :
 
-Variables : voir `.env.example`. En production, `APP_URL` en HTTPS,
-`STORAGE_ALLOW_LOCAL` vide, et des secrets neufs.
+- build `npm run build`, puis `prisma migrate deploy` avant chaque mise en
+  ligne ;
+- démarrage `npm run start:prod`, sur le port fourni par Railway ;
+- point de santé `/api/v1/health`, qui interroge la base ;
+- une seule instance : les limites de débit sont tenues en mémoire tant que
+  `REDIS_URL` n'est pas branché.
 
-Les limites de débit sont tenues en mémoire : une seule instance tant que
-`REDIS_URL` n'est pas branché.
+Variables de production (voir `.env.example`) : `DATABASE_URL` (PostgreSQL
+Railway), `DATABASE_POOL_MAX=5`, `APP_URL` en HTTPS, trois secrets **neufs**
+(`BETTER_AUTH_SECRET`, `API_SECRET`, `ENCRYPTION_KEY`), `GOOGLE_CLIENT_ID`
+et `GOOGLE_CLIENT_SECRET`, `STORAGE_ALLOW_LOCAL` vide.
+
+Après le premier déploiement :
+
+1. Ajouter dans Google Cloud les URI de redirection de production :
+   `<APP_URL>/api/v1/storage/google/callback` et
+   `<APP_URL>/api/v1/auth/callback/google`.
+2. Créer le super administrateur : `railway run npm run admin:create`.
+3. Paramètres > Stockage > Connecter Google Drive.
+
+`ENCRYPTION_KEY` ne doit plus changer ensuite : le jeton Google enregistré
+deviendrait illisible, et il faudrait reconnecter Drive.
 
 ## Sécurité, en bref
 

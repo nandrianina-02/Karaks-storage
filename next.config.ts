@@ -8,9 +8,6 @@ const nextConfig: NextConfig = {
    * par Node, comme Karaks le fait déjà.
    */
   serverExternalPackages: ['pg', '@prisma/adapter-pg', '@prisma/client'],
-
-  /** Le service tourne sur un serveur Node permanent, pas en fonctions éphémères. */
-  output: 'standalone',
 }
 
 export default nextConfig

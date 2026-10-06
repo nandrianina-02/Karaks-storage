@@ -7,6 +7,7 @@
     "dev": "next dev -p 3200",
     "build": "next build",
     "start": "next start -p 3200",
+    "start:prod": "next start -H 0.0.0.0 -p ${PORT:-3200}",
     "postinstall": "prisma generate",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -59,5 +60,8 @@
     "prisma@7.10.0": true,
     "unrs-resolver@1.12.2": true,
     "@prisma/engines@7.10.0": true
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
