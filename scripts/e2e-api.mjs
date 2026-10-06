@@ -5,7 +5,10 @@
  * les fichiers qu'il a créés. Ne touche à aucun autre projet.
  *
  * Usage : node scripts/e2e-api.mjs
- *   BASE_URL (défaut http://localhost:3200), ADMIN_EMAIL, ADMIN_PASSWORD
+ *   BASE_URL (défaut http://localhost:3200), ADMIN_EMAIL, ADMIN_PASSWORD,
+ *   E2E_PROJECT : nom du projet de test. Un projet créé après la connexion
+ *   de Google Drive y est stocké : « Projet de test Drive » éprouve alors le
+ *   vrai fournisseur.
  */
 import { createHmac } from 'node:crypto'
 import { createServer } from 'node:http'
@@ -16,6 +19,8 @@ const BASE = process.env.BASE_URL ?? 'http://localhost:3200'
 const EMAIL = process.env.ADMIN_EMAIL ?? 'admin@karaks-storage.local'
 const PASSWORD = process.env.ADMIN_PASSWORD ?? 'ks-admin-dev-2026'
 const ORIGIN_OK = 'http://localhost:3000'
+const PROJECT_NAME = process.env.E2E_PROJECT ?? 'Projet de test e2e'
+const PROJECT_SLUG = PROJECT_NAME.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
 const failures = []
 function check(label, ok, detail = '') {
@@ -65,11 +70,11 @@ const anonymous = await request('/api/v1/files', { session: false })
 check('sans authentification, l’API refuse (401)', anonymous.status === 401, String(anonymous.status))
 
 const { data: listed } = await request('/api/v1/projects')
-let project = listed.projects.find((item) => item.slug.startsWith('projet-de-test-e2e'))
+let project = listed.projects.find((item) => item.slug.startsWith(PROJECT_SLUG))
 if (!project) {
   const created = await request('/api/v1/projects', {
     method: 'POST',
-    body: { name: 'Projet de test e2e', allowedOrigins: [ORIGIN_OK] },
+    body: { name: PROJECT_NAME, allowedOrigins: [ORIGIN_OK] },
   })
   check('un administrateur peut créer un projet', created.status === 201, String(created.status))
   project = created.data.project
