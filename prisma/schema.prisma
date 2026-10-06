@@ -1,0 +1,534 @@
+// ============================================================================
+// KARAKS STORAGE — Schéma de données
+// Référence : Karaks_Storage_Cahier_des_Charges (CDS), section 27.
+//
+// La base ne garde que les métadonnées : les octets vivent chez le
+// fournisseur de stockage (Google Drive en V1, CDS 8 et 29). Les identifiants
+// du fournisseur restent côté serveur et ne sortent jamais par l'API publique
+// (CDS 24).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Comptes (CDS 17) — tables attendues par Better Auth
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  DEVELOPER
+  USER
+  SERVICE
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  name          String
+  emailVerified Boolean    @default(false)
+  image         String?
+  role          UserRole   @default(USER)
+  status        UserStatus @default(ACTIVE)
+
+  /// Les notifications sont les événements du journal postérieurs à cette date.
+  notificationsSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions    Session[]
+  accounts    Account[]
+  memberships ProjectMember[]
+  projects    Project[]       @relation("ProjectOwner")
+  files       File[]
+  apiKeys     ApiKey[]
+  links       SignedUrl[]
+  auditLogs   AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Fournisseurs de stockage (CDS 29)
+// ---------------------------------------------------------------------------
+
+enum ProviderKind {
+  GOOGLE_DRIVE
+  LOCAL
+}
+
+enum ProviderStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+model StorageProvider {
+  id     String         @id @default(cuid())
+  kind   ProviderKind
+  name   String
+  status ProviderStatus @default(DISCONNECTED)
+
+  /// Compte Google relié, affiché dans les réglages.
+  accountEmail String?
+  /// Jeton de rafraîchissement OAuth, chiffré (AES-256-GCM).
+  credentials  String?
+  /// Dossier racine « KARAKS STORAGE » et ses sous-dossiers techniques.
+  rootFolderId      String?
+  projectsFolderId  String?
+  temporaryFolderId String?
+  trashFolderId     String?
+
+  lastError   String?
+  connectedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  projects Project[]
+  files    File[]
+
+  @@map("storage_providers")
+}
+
+// ---------------------------------------------------------------------------
+// Projets (CDS 7)
+// ---------------------------------------------------------------------------
+
+model Project {
+  id          String  @id @default(cuid())
+  /// Identifiant public, du type `prj_k82hd0`.
+  publicId    String  @unique
+  name        String
+  slug        String  @unique
+  description String?
+
+  ownerId    String
+  providerId String
+  /// Dossier du projet chez le fournisseur.
+  providerFolderId String?
+
+  /// Origines autorisées à lire les liens temporaires depuis un navigateur.
+  allowedOrigins String[] @default([])
+  /// Taille maximale d'un fichier, en octets (CDS 25).
+  maxFileSize    BigInt   @default(104857600)
+  /// Quota total du projet, en octets. Nul : pas de limite propre au projet.
+  storageQuota   BigInt?
+  /// Requêtes par minute et par clé ou par compte (CDS 25).
+  rateLimitPerMinute Int  @default(100)
+  signedUrlPerMinute Int  @default(30)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner    User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  provider StorageProvider @relation(fields: [providerId], references: [id])
+  members  ProjectMember[]
+  folders  Folder[]
+  files    File[]
+  apiKeys  ApiKey[]
+  links    SignedUrl[]
+  webhooks Webhook[]
+  uploads  UploadSession[]
+  usage    UsageStat[]
+  logs     AuditLog[]
+
+  @@map("projects")
+}
+
+enum ProjectRole {
+  OWNER
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  projectId String
+  userId    String
+  role      ProjectRole @default(VIEWER)
+  createdAt DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+// ---------------------------------------------------------------------------
+// Dossiers et fichiers (CDS 8, 9)
+// ---------------------------------------------------------------------------
+
+model Folder {
+  id        String  @id @default(cuid())
+  /// Identifiant public, du type `fld_k82hd0`.
+  publicId  String  @unique
+  projectId String
+  parentId  String?
+  name      String
+
+  providerFolderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Folder[] @relation("FolderTree")
+  files    File[]
+
+  @@unique([projectId, parentId, name])
+  @@index([projectId, parentId])
+  @@map("folders")
+}
+
+enum FileStatus {
+  UPLOADING
+  ACTIVE
+  TRASHED
+  DELETED
+}
+
+model File {
+  id       String @id @default(cuid())
+  /// Identifiant public, du type `file_92kd0x`.
+  publicId String @unique
+
+  projectId String
+  folderId  String?
+  ownerId   String?
+  /// Clé API à l'origine du téléversement, le cas échéant.
+  apiKeyId  String?
+
+  originalName String
+  storageName  String
+  extension    String
+  mimeType     String
+  size         BigInt
+  checksum     String?
+
+  providerId     String
+  providerFileId String?
+
+  status FileStatus @default(ACTIVE)
+
+  /// Métadonnées média, relevées par le navigateur au téléversement.
+  durationSeconds Float?
+  width           Int?
+  height          Int?
+  /// Crêtes du signal audio (0-100), calculées par le navigateur au
+  /// téléversement : la forme d'onde s'affiche sans relire le fichier.
+  waveform        Int[]   @default([])
+
+  streamCount   Int       @default(0)
+  downloadCount Int       @default(0)
+  lastAccessAt  DateTime?
+
+  trashedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder   Folder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner    User?           @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  apiKey   ApiKey?         @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  provider StorageProvider @relation(fields: [providerId], references: [id])
+  links    SignedUrl[]
+
+  @@index([projectId, folderId, status])
+  @@index([projectId, status, createdAt])
+  @@index([projectId, originalName])
+  @@map("files")
+}
+
+enum UploadStatus {
+  PENDING
+  COMPLETED
+  ABORTED
+}
+
+/// Téléversement reprenable (CDS 12).
+model UploadSession {
+  id        String @id @default(cuid())
+  /// Identifiant public, du type `upl_x82kd0`.
+  publicId  String @unique
+  /// Identifiant public du fichier à venir : le nom de stockage en dépend,
+  /// il doit donc exister dès l'ouverture de la session.
+  filePublicId String @unique
+  projectId String
+  folderId  String?
+  ownerId   String?
+  apiKeyId  String?
+
+  fileName  String
+  mimeType  String
+  size      BigInt
+  received  BigInt @default(0)
+
+  durationSeconds Float?
+  width           Int?
+  height          Int?
+  waveform        Int[]  @default([])
+
+  /// Adresse de session reprenable chez le fournisseur. Elle vaut un droit
+  /// d'écriture : elle ne quitte jamais le serveur.
+  providerSession String?
+  status          UploadStatus @default(PENDING)
+  fileId          String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@map("upload_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Clés API (CDS 6.4, 16)
+// ---------------------------------------------------------------------------
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  projectId   String
+  name        String
+  /// Début lisible de la clé, pour la reconnaître dans la liste.
+  prefix      String
+  /// Empreinte HMAC-SHA-256 de la clé : la clé elle-même n'est jamais stockée.
+  hash        String    @unique
+  permissions String[]
+  createdById String?
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  files     File[]
+  links     SignedUrl[]
+
+  @@index([projectId])
+  @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Liens temporaires (CDS 15)
+// ---------------------------------------------------------------------------
+
+enum LinkType {
+  STREAM
+  DOWNLOAD
+}
+
+model SignedUrl {
+  id        String   @id @default(cuid())
+  /// Empreinte du jeton présent dans l'adresse `/s/<jeton>`.
+  tokenHash String   @unique
+  /// Quatre premiers caractères du jeton, pour l'identifier dans la liste.
+  hint      String
+  projectId String
+  fileId    String
+  type      LinkType @default(STREAM)
+
+  expiresAt DateTime
+  maxUses   Int?
+  uses      Int       @default(0)
+  revokedAt DateTime?
+  /// Posé au premier accès après expiration : l'événement `link.expired`
+  /// n'est émis qu'une fois.
+  expiredNotifiedAt DateTime?
+
+  createdById String?
+  apiKeyId    String?
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime?
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file      File    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  apiKey    ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([fileId])
+  @@map("signed_urls")
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks (CDS 19)
+// ---------------------------------------------------------------------------
+
+model Webhook {
+  id        String   @id @default(cuid())
+  projectId String
+  url       String
+  events    String[]
+  /// Secret de signature, chiffré. Le client vérifie l'en-tête de signature.
+  secret    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id         String   @id @default(cuid())
+  webhookId  String
+  event      String
+  payload    Json
+  statusCode Int?
+  success    Boolean  @default(false)
+  error      String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// Statistiques et journal (CDS 22, 23)
+// ---------------------------------------------------------------------------
+
+/// Agrégat quotidien par projet : une ligne par jour, incrémentée en place.
+model UsageStat {
+  id        String   @id @default(cuid())
+  projectId String
+  day       DateTime @db.Date
+
+  requests  Int    @default(0)
+  streams   Int    @default(0)
+  downloads Int    @default(0)
+  uploads   Int    @default(0)
+  bytesOut  BigInt @default(0)
+  bytesIn   BigInt @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, day])
+  @@map("usage_stats")
+}
+
+enum AuditAction {
+  UPLOAD
+  DOWNLOAD
+  STREAM
+  UPDATE
+  DELETE
+  RESTORE
+  DELETE_PERMANENT
+  CREATE_FOLDER
+  DELETE_FOLDER
+  CREATE_LINK
+  REVOKE_LINK
+  CREATE_API_KEY
+  REVOKE_API_KEY
+  CREATE_PROJECT
+  UPDATE_PROJECT
+  CONNECT_PROVIDER
+  CREATE_WEBHOOK
+  DELETE_WEBHOOK
+  LOGIN
+  LOGIN_FAILED
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  action    AuditAction
+  result    AuditResult @default(SUCCESS)
+  projectId String?
+  userId    String?
+  apiKeyId  String?
+  /// Identifiant public du fichier, conservé même après sa suppression.
+  fileId    String?
+  target    String?
+  ip        String?
+  userAgent String?
+  details   Json?
+  createdAt DateTime    @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
