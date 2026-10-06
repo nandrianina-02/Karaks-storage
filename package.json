@@ -20,7 +20,9 @@
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
-    "admin:create": "tsx scripts/create-admin.ts"
+    "admin:create": "tsx scripts/create-admin.ts",
+    "test:e2e": "node scripts/e2e-api.mjs",
+    "demo:data": "node scripts/demo-data.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
