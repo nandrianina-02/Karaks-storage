@@ -18,6 +18,7 @@ const NOTABLE: AuditAction[] = [
   'CREATE_API_KEY',
   'REVOKE_API_KEY',
   'CREATE_PROJECT',
+  'DELETE_PROJECT',
   'CONNECT_PROVIDER',
   'CREATE_WEBHOOK',
   'LOGIN_FAILED',
@@ -37,7 +38,7 @@ export async function notificationsFor(userId: string, take = 12) {
         // Les événements de plateforme, hors de tout projet, ne concernent
         // que celui qui l'administre.
         ...(user.role === 'SUPER_ADMIN'
-          ? [{ projectId: null, action: { in: ['CONNECT_PROVIDER', 'LOGIN_FAILED'] as AuditAction[] } }]
+          ? [{ projectId: null, action: { in: ['CONNECT_PROVIDER', 'LOGIN_FAILED', 'DELETE_PROJECT'] as AuditAction[] } }]
           : []),
       ],
     },

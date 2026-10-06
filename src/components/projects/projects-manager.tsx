@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRight, Check, Layers, Plus } from 'lucide-react'
+import { ArrowRight, Check, Layers, Plus, Settings, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
@@ -8,6 +8,7 @@ import { selectProject } from '@/app/(app)/actions'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Input, Textarea } from '@/components/ui/field'
+import { ActionMenu } from '@/components/ui/menu'
 import { Badge, Card, EmptyState, PageHeader } from '@/components/ui/surface'
 import { useToast } from '@/components/ui/toast'
 import type { ProjectDto } from '@/lib/api/serialize'
@@ -30,11 +31,13 @@ export function ProjectsManager({
   current,
   canCreate,
   openCreate,
+  superAdmin,
 }: {
   projects: ProjectCard[]
   current: string | null
   canCreate: boolean
   openCreate: boolean
+  superAdmin: boolean
 }) {
   const router = useRouter()
   const toast = useToast()
@@ -44,6 +47,15 @@ export function ProjectsManager({
   const [description, setDescription] = useState('')
   const [origins, setOrigins] = useState('')
   const [busy, setBusy] = useState(false)
+
+  /** Les réglages portent sur le projet courant : on le sélectionne d'abord. */
+  function settings(id: string) {
+    startTransition(async () => {
+      await selectProject(id)
+      router.push('/parametres?onglet=projet')
+      router.refresh()
+    })
+  }
 
   function open(id: string) {
     startTransition(async () => {
@@ -120,6 +132,15 @@ export function ProjectsManager({
                 ) : (
                   project.role && <Badge>{ROLES[project.role] ?? project.role}</Badge>
                 )}
+                <ActionMenu
+                  label={`Actions sur ${project.name}`}
+                  items={[
+                    { label: 'Paramètres du projet', icon: <Settings />, onSelect: () => settings(project.id) },
+                    ...(project.role === 'OWNER' || superAdmin
+                      ? [{ label: 'Supprimer le projet', icon: <Trash2 />, tone: 'danger' as const, separatorBefore: true, onSelect: () => settings(project.id) }]
+                      : []),
+                  ]}
+                />
               </div>
               {project.description && <p className="mt-3 line-clamp-2 text-sm text-ink-2">{project.description}</p>}
               <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-line pt-4 text-center">

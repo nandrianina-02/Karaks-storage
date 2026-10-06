@@ -81,6 +81,7 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   REVOKE_API_KEY: 'Clé API révoquée',
   CREATE_PROJECT: 'Projet créé',
   UPDATE_PROJECT: 'Projet modifié',
+  DELETE_PROJECT: 'Projet supprimé',
   CONNECT_PROVIDER: 'Stockage connecté',
   CREATE_WEBHOOK: 'Webhook créé',
   DELETE_WEBHOOK: 'Webhook supprimé',

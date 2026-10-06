@@ -31,6 +31,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Sea
     <ProjectsManager
       current={workspace.project?.publicId ?? null}
       canCreate={workspace.canCreateProject}
+      superAdmin={workspace.user.role === 'SUPER_ADMIN'}
       openCreate={param(await searchParams, 'nouveau') === '1'}
       projects={projects.map((project) => {
         const size = sizes.find((row) => row.projectId === project.id)

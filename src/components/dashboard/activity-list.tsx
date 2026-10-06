@@ -36,6 +36,7 @@ export const ACTION_ICONS: Record<string, LucideIcon> = {
   REVOKE_API_KEY: KeyRound,
   CREATE_PROJECT: Layers,
   UPDATE_PROJECT: Layers,
+  DELETE_PROJECT: Trash2,
   CONNECT_PROVIDER: Unplug,
   CREATE_WEBHOOK: Webhook,
   DELETE_WEBHOOK: Webhook,

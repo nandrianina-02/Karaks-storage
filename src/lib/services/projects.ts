@@ -5,7 +5,7 @@ import { newPublicId } from '@/lib/ids'
 import { prisma } from '@/lib/prisma'
 import { audit, type Actor } from '@/lib/services/audit'
 import { canCreateProject, type GlobalRoleName } from '@/lib/security/permissions'
-import { defaultProvider, withProvider } from '@/lib/storage'
+import { defaultProvider, forgetQuota, withProvider } from '@/lib/storage'
 
 /**
  * Projets (CDS 7) : chacun a ses fichiers, ses clés, ses réglages et ses
@@ -137,4 +137,64 @@ export async function removeMember(projectId: string, userId: string) {
   // Un projet sans propriétaire ne pourrait plus être administré.
   if (member.role === 'OWNER') throw new ApiError('conflict', 'Le propriétaire ne peut pas être retiré.')
   await prisma.projectMember.delete({ where: { id: member.id } })
+}
+
+/** Supprimer un projet : propriétaire du projet ou super administrateur. */
+export function canDeleteProject(globalRole: GlobalRoleName, projectRole: string | null): boolean {
+  return globalRole === 'SUPER_ADMIN' || projectRole === 'OWNER'
+}
+
+/**
+ * Supprime un projet et tout ce qu'il contient.
+ *
+ * Le fournisseur est vidé avant la base : si Google Drive échoue en route, le
+ * projet reste en place et la suppression peut être relancée, au lieu de
+ * laisser dans le Drive des fichiers que plus rien ne référence. Chaque
+ * fichier est effacé un par un, corbeille comprise — les fichiers à la
+ * corbeille vivent dans le dossier `trash` commun, pas dans celui du projet.
+ *
+ * Le journal du projet disparaît avec lui ; la suppression elle-même y est
+ * inscrite hors projet, pour qu'il en reste une trace.
+ */
+export async function deleteProject(projectId: string, actor: Actor) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { provider: true } })
+  const [files, folders, uploads] = await Promise.all([
+    prisma.file.findMany({ where: { projectId }, select: { providerFileId: true, size: true } }),
+    prisma.folder.findMany({ where: { projectId }, select: { id: true, parentId: true, providerFolderId: true } }),
+    prisma.uploadSession.findMany({ where: { projectId, status: 'PENDING' }, select: { providerSession: true } }),
+  ])
+
+  await withProvider(project.provider, async (storage) => {
+    for (const upload of uploads) {
+      if (upload.providerSession) await storage.abortResumable(upload.providerSession)
+    }
+    // Quatre suppressions à la fois : assez pour avancer, sans heurter les
+    // limites de requêtes de Google.
+    const ids = files.map((file) => file.providerFileId).filter((id): id is string => Boolean(id))
+    for (let index = 0; index < ids.length; index += 4) {
+      await Promise.all(ids.slice(index, index + 4).map((id) => storage.delete(id)))
+    }
+    // Dossiers des plus profonds aux plus hauts, puis celui du projet.
+    const depth = (id: string | null): number => {
+      const folder = folders.find((item) => item.id === id)
+      return folder ? 1 + depth(folder.parentId) : 0
+    }
+    for (const folder of [...folders].sort((a, b) => depth(b.id) - depth(a.id))) {
+      if (folder.providerFolderId) await storage.delete(folder.providerFolderId)
+    }
+    if (project.providerFolderId) await storage.delete(project.providerFolderId)
+  })
+  forgetQuota(project.provider.id)
+
+  await prisma.project.delete({ where: { id: projectId } })
+  await audit(actor, {
+    action: 'DELETE_PROJECT',
+    target: project.name,
+    details: {
+      project: project.publicId,
+      files: files.length,
+      bytes: files.reduce((total, file) => total + Number(file.size), 0),
+    },
+  })
+  return { name: project.name, files: files.length }
 }

@@ -97,7 +97,7 @@ const keyResponse = await request('/api/v1/api-keys', {
   },
 })
 const KEY = keyResponse.data.secret
-check('une clé API se crée et n’est montrée qu’à la création', keyResponse.status === 201 && /^ks_test_/.test(KEY ?? ''), keyResponse.data.apiKey?.prefix)
+check('une clé API se crée et n’est montrée qu’à la création', keyResponse.status === 201 && /^ks_(live|test)_/.test(KEY ?? ''), keyResponse.data.apiKey?.prefix)
 const keyList = await request('/api/v1/api-keys', { project: P })
 check('la liste des clés ne contient jamais le secret', !JSON.stringify(keyList.data).includes(KEY))
 
@@ -232,16 +232,20 @@ const hook = await request('/api/v1/webhooks', {
   body: { url: 'http://localhost:4799/hook', events: ['file.uploaded', 'file.deleted'] },
 })
 const SECRET = hook.data.secret
+// En production, les webhooks vers le réseau local sont refusés (SSRF) : le
+// récepteur de ce scénario n'y est pas joignable, l'essai est alors sauté.
+const webhookTestable = hook.status === 201
+if (!webhookTestable) console.log('       webhook vers localhost refusé (serveur de production) : essai sauté')
 const tiny = new FormData()
 tiny.append('file', new Blob([new TextEncoder().encode('webhook e2e\n')], { type: 'text/plain' }), 'webhook-e2e.txt')
 const tinyFile = await request('/api/v1/files/upload', { method: 'POST', key: KEY, body: tiny })
-for (let i = 0; i < 30 && !received.some((item) => item.body.includes(tinyFile.data.file.id)); i += 1) {
+for (let i = 0; webhookTestable && i < 30 && !received.some((item) => item.body.includes(tinyFile.data.file.id)); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 200))
 }
 const delivery = received.find((item) => item.body.includes(tinyFile.data.file.id))
 const [, t, v1] = /t=(\d+),v1=([0-9a-f]+)/.exec(delivery?.headers['karaks-signature'] ?? '') ?? []
 const expected = delivery ? createHmac('sha256', SECRET).update(`${t}.${delivery.body}`).digest('hex') : ''
-check('le webhook file.uploaded arrive, signé', Boolean(delivery) && v1 === expected, delivery?.headers['karaks-event'])
+if (webhookTestable) check('le webhook file.uploaded arrive, signé', Boolean(delivery) && v1 === expected, delivery?.headers['karaks-event'])
 
 // --- Corbeille ---
 const trash = await request(`/api/v1/files/${FILE}`, { method: 'DELETE', project: P })
@@ -273,12 +277,48 @@ for (let i = 0; i < 14 && !limited; i += 1) {
 check('au-delà de la limite, l’API répond 429 avec Retry-After', Boolean(limited?.headers.get('retry-after')))
 await request(`/api/v1/projects/${P}`, { method: 'PATCH', body: { rateLimitPerMinute: 100 } })
 
+// --- Suppression d'un projet ---
+// Sur un projet jetable : le projet de test, lui, sert aux passages suivants.
+const doomed = (await request('/api/v1/projects', { method: 'POST', body: { name: `Projet jetable ${Date.now().toString(36)}` } })).data.project
+const doomedKey = (
+  await request('/api/v1/api-keys', { method: 'POST', project: doomed.id, body: { name: 'Clé jetable', permissions: ['files:read', 'files:upload'] } })
+).data.secret
+const doomedForm = new FormData()
+doomedForm.append('file', new Blob([melody(2, 6)], { type: 'audio/wav' }), 'jetable.wav')
+const doomedFile = (await request('/api/v1/files/upload', { method: 'POST', key: doomedKey, body: doomedForm })).data.file
+const doomedTrash = new FormData()
+doomedTrash.append('file', new Blob([new TextEncoder().encode('corbeille\n')], { type: 'text/plain' }), 'corbeille.txt')
+const trashedFile = (await request('/api/v1/files/upload', { method: 'POST', key: doomedKey, body: doomedTrash })).data.file
+await request(`/api/v1/files/${trashedFile.id}`, { method: 'DELETE', project: doomed.id })
+
+const byKey = await request(`/api/v1/projects/${doomed.id}`, { method: 'DELETE', key: doomedKey, body: { confirm: doomed.name } })
+check('une clé API ne peut pas supprimer un projet', byKey.status === 403, String(byKey.status))
+const wrongName = await request(`/api/v1/projects/${doomed.id}`, { method: 'DELETE', body: { confirm: 'autre nom' } })
+check('la suppression exige de retaper le nom du projet', wrongName.status === 400, String(wrongName.status))
+const deleted = await request(`/api/v1/projects/${doomed.id}`, { method: 'DELETE', body: { confirm: doomed.name } })
+check(
+  'un projet se supprime avec ses fichiers, corbeille comprise',
+  deleted.status === 200 && deleted.data.deleted?.files === 2,
+  `${deleted.data.deleted?.files} fichiers`,
+)
+const stillListed = (await request('/api/v1/projects')).data.projects.some((item) => item.id === doomed.id)
+check('le projet supprimé disparaît de la liste', !stillListed)
+const orphanKey = await request('/api/v1/files', { key: doomedKey })
+check('les clés du projet supprimé sont refusées', orphanKey.status === 401, String(orphanKey.status))
+const gone = await request(`/api/v1/files/${doomedFile.id}`, { project: doomed.id })
+check('ses fichiers ne sont plus accessibles', gone.status === 404, String(gone.status))
+const deletionLog = await request('/api/v1/me/notifications')
+check(
+  'la suppression reste inscrite au journal',
+  deletionLog.data.items?.some((item) => item.action === 'DELETE_PROJECT' && item.target === doomed.name),
+)
+
 // --- Ménage ---
 for (const id of [FILE, resumable?.id, tinyFile.data.file?.id].filter(Boolean)) {
   await request(`/api/v1/files/${id}/permanent`, { method: 'DELETE', project: P })
 }
 await request(`/api/v1/folders/${FOLDER}`, { method: 'DELETE', project: P })
-await request(`/api/v1/webhooks/${hook.data.webhook.id}`, { method: 'DELETE', project: P })
+if (webhookTestable) await request(`/api/v1/webhooks/${hook.data.webhook.id}`, { method: 'DELETE', project: P })
 receiver.close()
 
 console.log(failures.length === 0 ? '\nToutes les vérifications sont passées.' : `\n${failures.length} échec(s) : ${failures.join(' | ')}`)

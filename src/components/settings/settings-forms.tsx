@@ -1,12 +1,13 @@
 'use client'
 
-import { CircleAlert, CircleCheck, Monitor, Moon, Save, Sun, Trash2, UserPlus, Unplug } from 'lucide-react'
+import { CircleAlert, CircleCheck, Monitor, Moon, Save, Sun, Trash2, TriangleAlert, UserPlus, Unplug } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
 import { ProviderMark } from '@/components/files/file-panel'
 import { setTheme } from '@/components/theme/theme-toggle'
 import { Button, buttonClass } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/field'
 import { Badge, Card, CardHeader, Meter, meterTone } from '@/components/ui/surface'
 import { useToast } from '@/components/ui/toast'
@@ -17,7 +18,17 @@ import { cn, formatDate } from '@/lib/utils'
 
 const MB = 1024 * 1024
 
-export function ProjectSettingsForm({ project, editable }: { project: ProjectDto; editable: boolean }) {
+export function ProjectSettingsForm({
+  project,
+  editable,
+  deletable,
+  stats,
+}: {
+  project: ProjectDto
+  editable: boolean
+  deletable: boolean
+  stats: { files: number; bytes: number; keys: number }
+}) {
   const router = useRouter()
   const toast = useToast()
   const [, startTransition] = useTransition()
@@ -110,7 +121,87 @@ export function ProjectSettingsForm({ project, editable }: { project: ProjectDto
           </Button>
         </div>
       )}
+
+      {deletable && <DeleteProjectCard project={project} stats={stats} />}
     </form>
+  )
+}
+
+/**
+ * Suppression d'un projet : irréversible, et elle efface aussi les fichiers
+ * chez le fournisseur. Le nom à retaper oblige à lire ce qu'on supprime.
+ */
+export function DeleteProjectCard({ project, stats }: { project: ProjectDto; stats: { files: number; bytes: number; keys: number } }) {
+  const router = useRouter()
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function remove() {
+    setBusy(true)
+    try {
+      const data = await api<{ deleted: { name: string; files: number } }>(`/api/v1/projects/${project.id}`, {
+        method: 'DELETE',
+        body: { confirm },
+      })
+      toast.success('Projet supprimé', `${data.deleted.name} et ses ${data.deleted.files} fichier${data.deleted.files > 1 ? 's' : ''}`)
+      setOpen(false)
+      router.push('/projets')
+      router.refresh()
+    } catch (error) {
+      toast.error('Suppression impossible', errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card className="animate-rise stagger-4 border-danger/40">
+      <CardHeader title="Supprimer le projet" icon={<Trash2 />} description="Action définitive, réservée au propriétaire du projet." />
+      <div className="flex flex-wrap items-center gap-4 px-5 pb-5">
+        <p className="min-w-0 flex-1 text-sm leading-relaxed text-ink-2">
+          Les {stats.files} fichier{stats.files > 1 ? 's' : ''} ({formatBytes(stats.bytes)}) sont effacés du stockage, corbeille comprise. Les{' '}
+          {stats.keys} clé{stats.keys > 1 ? 's' : ''} API, les liens temporaires et les webhooks cessent aussitôt de fonctionner.
+        </p>
+        <Button
+          type="button"
+          variant="danger-ghost"
+          icon={<Trash2 className="h-4 w-4" />}
+          onClick={() => {
+            setConfirm('')
+            setOpen(true)
+          }}
+        >
+          Supprimer le projet
+        </Button>
+      </div>
+
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        size="sm"
+        title={`Supprimer ${project.name} ?`}
+        icon={<TriangleAlert className="h-[18px] w-[18px]" />}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>Annuler</Button>
+            <Button variant="danger" loading={busy} disabled={confirm.trim() !== project.name} onClick={remove}>
+              Supprimer définitivement
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="rounded-lg bg-danger-soft px-3 py-2.5 text-sm leading-relaxed text-danger">
+            {stats.files} fichier{stats.files > 1 ? 's' : ''} et tout le contenu du projet seront effacés. Cette action est irréversible.
+          </p>
+          <Field label={`Pour confirmer, saisissez « ${project.name} »`} htmlFor="confirm-delete">
+            <Input id="confirm-delete" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="off" data-autofocus />
+          </Field>
+        </div>
+      </Dialog>
+    </Card>
   )
 }
 

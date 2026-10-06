@@ -30,6 +30,7 @@ const ICONS: Record<string, typeof Bell> = {
   CREATE_API_KEY: KeyRound,
   REVOKE_API_KEY: KeyRound,
   CREATE_PROJECT: Layers,
+  DELETE_PROJECT: Trash2,
   CONNECT_PROVIDER: Unplug,
   CREATE_WEBHOOK: Webhook,
   LOGIN_FAILED: ShieldAlert,

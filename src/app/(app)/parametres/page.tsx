@@ -15,6 +15,7 @@ import { projectDto } from '@/lib/api/serialize'
 import { isGoogleConfigured } from '@/lib/env'
 import { param, type SearchParams } from '@/lib/pages'
 import { prisma } from '@/lib/prisma'
+import { canDeleteProject } from '@/lib/services/projects'
 import { providerQuota } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import { getWorkspace } from '@/lib/workspace'
@@ -38,7 +39,20 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
   let content: React.ReactNode = null
   if (tab === 'projet' && workspace.project) {
-    content = <ProjectSettingsForm project={projectDto(workspace.project)} editable={workspace.can('project:manage')} />
+    const project = workspace.project
+    const [size, keys] = await Promise.all([
+      prisma.file.aggregate({ where: { projectId: project.id }, _sum: { size: true }, _count: { _all: true } }),
+      prisma.apiKey.count({ where: { projectId: project.id, revokedAt: null } }),
+    ])
+    const role = workspace.projects.find((item) => item.id === project.publicId)?.role ?? null
+    content = (
+      <ProjectSettingsForm
+        project={projectDto(project)}
+        editable={workspace.can('project:manage')}
+        deletable={canDeleteProject(workspace.user.role, role)}
+        stats={{ files: size._count._all, bytes: Number(size._sum.size ?? 0), keys }}
+      />
+    )
   } else if (tab === 'membres' && workspace.project) {
     const members = await prisma.projectMember.findMany({
       where: { projectId: workspace.project.id },
