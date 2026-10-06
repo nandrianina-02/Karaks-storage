@@ -77,35 +77,48 @@ OpenAPI 3.1 sur `/api/v1/openapi.json`.
 | `npm run db:deploy` | Appliquer les migrations |
 | `npm run admin:create` | Créer ou promouvoir le super administrateur |
 
-## Déployer (Railway)
+## Déployer
 
-Les octets passent par le serveur — les liens Drive ne sont jamais donnés
-aux clients — : il faut un serveur Node **permanent**, pas des fonctions
-éphémères, qui limitent la taille des corps et la durée des réponses.
-`railway.json` décrit le déploiement :
+### Vercel et Supabase (offre gratuite)
 
-- build `npm run build`, puis `prisma migrate deploy` avant chaque mise en
-  ligne ;
-- démarrage `npm run start:prod`, sur le port fourni par Railway ;
-- point de santé `/api/v1/health`, qui interroge la base ;
-- une seule instance : les limites de débit sont tenues en mémoire tant que
-  `REDIS_URL` n'est pas branché.
+Vercel fait tourner le code en fonctions éphémères. Le service s'y adapte :
 
-Variables de production (voir `.env.example`) : `DATABASE_URL` (PostgreSQL
-Railway), `DATABASE_POOL_MAX=5`, `APP_URL` en HTTPS, trois secrets **neufs**
-(`BETTER_AUTH_SECRET`, `API_SECRET`, `ENCRYPTION_KEY`), `GOOGLE_CLIENT_ID`
-et `GOOGLE_CLIENT_SECRET`, `STORAGE_ALLOW_LOCAL` vide.
+- envoi reprenable par morceaux de 4 Mio, sous la limite de 4,5 Mo par
+  requête ; envoi simple limité à 4 Mo (`VERCEL` détecté) ;
+- statistiques et webhooks menés à terme après chaque réponse (`after()`),
+  sans quoi la fonction gelée les perdrait ;
+- lecture et téléchargement plafonnés à 60 s par requête : les lecteurs
+  lisent par plages, ce qui reste bien en deçà ;
+- région `cdg1` (Paris), au plus près d'une base Supabase à Paris ;
+- limitation de débit approximative : chaque instance compte pour elle.
 
-Après le premier déploiement :
+L'offre gratuite de Vercel est réservée à un usage non commercial.
 
-1. Ajouter dans Google Cloud les URI de redirection de production :
+1. Créer un projet Supabase, récupérer l'adresse du pooler en mode
+   transaction (port 6543).
+2. Créer les tables : `node scripts/db-apply.mjs PRODUCTION_DATABASE_URL`
+   (Prisma Migrate reste bloqué derrière ce pooler ; ce script applique les
+   mêmes migrations et les inscrit pour Prisma).
+3. Importer le dépôt dans Vercel et déclarer les variables (voir
+   `.env.example`) : `DATABASE_URL` (pooler, `?pgbouncer=true`),
+   `DATABASE_POOL_MAX=3`, `APP_URL` en HTTPS, trois secrets **neufs**,
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+4. Dans Google Cloud, ajouter les URI de redirection de production :
    `<APP_URL>/api/v1/storage/google/callback` et
    `<APP_URL>/api/v1/auth/callback/google`.
-2. Créer le super administrateur : `railway run npm run admin:create`.
-3. Paramètres > Stockage > Connecter Google Drive.
+5. Créer le super administrateur contre la base de production :
+   `DATABASE_URL=<pooler> npm run admin:create`.
+6. Paramètres > Stockage > Connecter Google Drive.
 
-`ENCRYPTION_KEY` ne doit plus changer ensuite : le jeton Google enregistré
-deviendrait illisible, et il faudrait reconnecter Drive.
+### Railway (serveur permanent)
+
+`railway.json` décrit le déploiement : build, `prisma migrate deploy` avant
+chaque mise en ligne, `npm run start:prod` sur le port fourni, point de
+santé `/api/v1/health`, une seule instance. C'est la cible la plus adaptée
+quand le trafic grandit : pas de plafond de durée ni de taille par requête.
+
+`ENCRYPTION_KEY` ne doit plus changer après la connexion de Drive : le jeton
+enregistré deviendrait illisible, et il faudrait reconnecter Drive.
 
 ## Sécurité, en bref
 

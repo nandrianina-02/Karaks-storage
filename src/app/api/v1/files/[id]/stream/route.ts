@@ -17,3 +17,6 @@ async function stream(request: Request, { params }: Params<{ id: string }>) {
 
 export const GET = handle(stream)
 export const HEAD = handle(stream)
+
+/** Plafond des fonctions Vercel gratuites ; sans effet sur un serveur permanent. */
+export const maxDuration = 60

@@ -44,3 +44,6 @@ export const DELETE = handle(async (request: Request, { params }: Params<{ id: s
   await abortUpload(ctx.project, (await params).id)
   return ok({})
 })
+
+/** Plafond des fonctions Vercel gratuites ; sans effet sur un serveur permanent. */
+export const maxDuration = 60

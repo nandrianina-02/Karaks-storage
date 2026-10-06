@@ -39,7 +39,9 @@ export function recordUsage(projectId: string, delta: UsageDelta) {
     current[field] += delta[field] ?? 0
   }
   pending.set(key, current)
-  if (!timer) timer = setTimeout(() => void flushUsage(), 5_000)
+  // En fonctions, la minuterie ne se déclencherait jamais : la purge a lieu
+  // après chaque réponse (voir `drainBackground`).
+  if (!timer && !process.env.VERCEL) timer = setTimeout(() => void flushUsage(), 5_000)
 }
 
 export async function flushUsage() {

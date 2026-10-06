@@ -1,6 +1,9 @@
+import { after } from 'next/server'
+
 import type { Project, StorageProvider } from '@/generated/prisma/client'
 import { ApiError, toErrorResponse } from '@/lib/api/errors'
 import { auth } from '@/lib/auth'
+import { drainBackground, isServerless } from '@/lib/background'
 import { appUrl, env } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
 import { actorFromRequest, type Actor } from '@/lib/services/audit'
@@ -191,9 +194,13 @@ export async function authenticate(request: Request, options: { rateLimit?: 'api
   }
 }
 
-/** Enveloppe d'une route : toute erreur repart au format commun. */
+/**
+ * Enveloppe d'une route : toute erreur repart au format commun, et le
+ * travail d'arrière-plan est mené à terme après la réponse en fonctions.
+ */
 export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => {
+    if (isServerless) after(drainBackground)
     try {
       return await fn(...args)
     } catch (error) {

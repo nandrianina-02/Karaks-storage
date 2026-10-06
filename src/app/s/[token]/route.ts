@@ -1,4 +1,7 @@
+import { after } from 'next/server'
+
 import { toErrorResponse } from '@/lib/api/errors'
+import { drainBackground, isServerless } from '@/lib/background'
 import { clientIp } from '@/lib/services/audit'
 import { serveFile } from '@/lib/services/files'
 import { consumeLink } from '@/lib/services/links'
@@ -40,7 +43,11 @@ function refusal(status: number, message: string, request: Request) {
   )
 }
 
+/** Une lecture longue sur une connexion lente : plafond des fonctions Vercel gratuites. */
+export const maxDuration = 60
+
 async function serve(request: Request, { params }: Context) {
+  if (isServerless) after(drainBackground)
   try {
     const { token } = await params
     // Freine l'essai de jetons au hasard sans gêner un lecteur, qui émet

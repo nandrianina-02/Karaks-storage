@@ -6,8 +6,9 @@ import { uploadFields, uploadFile } from '@/lib/services/files'
 /**
  * Au-delà, le corps entier tiendrait en mémoire du serveur le temps de
  * l'envoi : les gros fichiers passent par une session reprenable (CDS 12).
+ * Sur Vercel, une requête ne dépasse pas 4,5 Mo.
  */
-const SIMPLE_UPLOAD_LIMIT = 100 * 1024 * 1024
+const SIMPLE_UPLOAD_LIMIT = (process.env.VERCEL ? 4 : 100) * 1024 * 1024
 
 /** `waveform` arrive en multipart sous forme de liste : « 12,40,73,… ». */
 function parseWaveform(value: FormDataEntryValue | null): number[] | undefined {
@@ -26,7 +27,7 @@ export const POST = handle(async (request: Request) => {
   ctx.require('files:upload')
 
   const length = Number(request.headers.get('content-length') ?? 0)
-  if (length > SIMPLE_UPLOAD_LIMIT + 64 * 1024) {
+  if (length > SIMPLE_UPLOAD_LIMIT + (process.env.VERCEL ? 0 : 64 * 1024)) {
     throw new ApiError(
       'payload_too_large',
       'Fichier trop volumineux pour un envoi simple : utilisez /api/v1/uploads (envoi reprenable).',
@@ -59,3 +60,6 @@ export const POST = handle(async (request: Request) => {
   })
   return ok({ file: fileDto(stored) }, { status: 201 })
 })
+
+/** Plafond des fonctions Vercel gratuites ; sans effet sur un serveur permanent. */
+export const maxDuration = 60

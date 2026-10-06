@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type { Prisma } from '@/generated/prisma/client'
+import { track } from '@/lib/background'
 
 import { env } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
@@ -44,9 +45,11 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, string> = {
 const TIMEOUT_MS = 10_000
 
 export function emit(projectId: string, event: WebhookEvent, data: Record<string, unknown>) {
-  void deliverAll(projectId, event, data).catch((error) => {
-    console.error('[webhooks]', error instanceof Error ? error.message : error)
-  })
+  track(
+    deliverAll(projectId, event, data).catch((error) => {
+      console.error('[webhooks]', error instanceof Error ? error.message : error)
+    }),
+  )
 }
 
 async function deliverAll(projectId: string, event: WebhookEvent, data: Record<string, unknown>) {

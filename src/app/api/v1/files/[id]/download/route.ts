@@ -11,3 +11,6 @@ async function download(request: Request, { params }: Params<{ id: string }>) {
 
 export const GET = handle(download)
 export const HEAD = handle(download)
+
+/** Plafond des fonctions Vercel gratuites ; sans effet sur un serveur permanent. */
+export const maxDuration = 60

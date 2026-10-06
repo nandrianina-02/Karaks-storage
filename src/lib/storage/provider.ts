@@ -81,8 +81,8 @@ export class ProviderError extends Error {
  * Taille des morceaux de téléversement reprenable.
  *
  * Google Drive exige un multiple de 256 Kio pour tout morceau autre que le
- * dernier. 8 Mio reste en dessous des limites de corps des hébergeurs
- * courants, tout en limitant le nombre d'allers-retours.
+ * dernier. 4 Mio passent sous la limite de 4,5 Mo par requête des fonctions
+ * Vercel, tout en gardant un nombre raisonnable d'allers-retours.
  */
-export const CHUNK_SIZE = 8 * 1024 * 1024
+export const CHUNK_SIZE = 4 * 1024 * 1024
 export const CHUNK_GRANULARITY = 256 * 1024

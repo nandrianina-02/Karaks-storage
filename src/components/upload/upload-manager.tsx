@@ -230,7 +230,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
           continue
         }
         const key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-        internals.current.set(key, { file, chunkSize: 8 * 1024 * 1024 })
+        internals.current.set(key, { file, chunkSize: 4 * 1024 * 1024 })
         accepted.push({
           key,
           name: file.name,

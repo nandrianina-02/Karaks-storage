@@ -131,14 +131,14 @@ export const SECTIONS: Section[] = [
     id: 'televersement',
     title: 'Téléversement',
     intro:
-      'Envoi simple pour les fichiers jusqu’à 100 Mo, envoi reprenable au-delà ou sur un réseau instable. Le contenu réel du fichier est vérifié : un fichier dont les octets ne correspondent pas à l’extension est refusé (415).',
+      'Envoi simple pour les petits fichiers (4 Mo), envoi reprenable au-delà ou sur un réseau instable. Le contenu réel du fichier est vérifié : un fichier dont les octets ne correspondent pas à l’extension est refusé (415).',
     endpoints: [
       {
         id: 'upload',
         method: 'POST',
         path: '/api/v1/files/upload',
         title: 'Envoi simple',
-        description: 'Corps multipart/form-data.',
+        description: 'Corps multipart/form-data, 4 Mo au plus ; au-delà, utilisez l’envoi reprenable.',
         permission: 'files:upload',
         body: {
           type: 'multipart',
@@ -165,7 +165,7 @@ export const SECTIONS: Section[] = [
           example: {
             success: true,
             upload: { id: 'upl_Hs7dK2pQm9xA', fileId: 'file_92kdLq0aZt7x', name: 'song.mp3', size: 52428800, received: 0, status: 'pending', expiresAt: '2026-10-12T10:00:00.000Z' },
-            chunkSize: 8388608,
+            chunkSize: 4194304,
             chunkGranularity: 262144,
           },
         },
@@ -179,9 +179,9 @@ export const SECTIONS: Section[] = [
           '202 tant que l’envoi n’est pas complet, 200 avec le fichier à la fin. Si received ne vaut pas la fin du morceau envoyé, reprenez à cette position.',
         permission: 'files:upload',
         params: [{ name: 'id', in: 'path', description: 'Identifiant de session (upl_…).', required: true }],
-        headers: { 'Content-Range': 'bytes 0-8388607/52428800' },
+        headers: { 'Content-Range': 'bytes 0-4194303/52428800' },
         body: { type: 'binary' },
-        response: { status: 202, example: { success: true, upload: { id: 'upl_Hs7dK2pQm9xA', received: 8388608, status: 'pending' }, file: null } },
+        response: { status: 202, example: { success: true, upload: { id: 'upl_Hs7dK2pQm9xA', received: 4194304, status: 'pending' }, file: null } },
       },
       {
         id: 'upload-status',
