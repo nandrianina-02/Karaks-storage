@@ -377,6 +377,11 @@ export interface ServeOptions {
   actor: Actor
   /** Origine autorisée à lire la réponse depuis un navigateur (CDS 26). */
   corsOrigin?: string | null
+  /**
+   * Ressource intégrable depuis n'importe quel site (lien temporaire). Le
+   * jeton vaut autorisation ; la lecture par script reste soumise au CORS.
+   */
+  embeddable?: boolean
   /** Appelé au début d'une nouvelle lecture, pas à chaque plage. */
   onOpen?: () => Promise<void> | void
 }
@@ -411,7 +416,9 @@ export async function serveFile(
     // garder de copie qui lui survivrait.
     'Cache-Control': 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
-    'Cross-Origin-Resource-Policy': options.corsOrigin ? 'cross-origin' : 'same-origin',
+    // Sans `cross-origin`, le navigateur refuse qu'une balise <audio> d'un
+    // autre site charge un lien temporaire, même sans lecture par script.
+    'Cross-Origin-Resource-Policy': options.embeddable || options.corsOrigin ? 'cross-origin' : 'same-origin',
   })
   if (file.checksum) headers.set('ETag', `"${file.checksum}"`)
   if (options.corsOrigin) {

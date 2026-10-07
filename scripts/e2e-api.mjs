@@ -236,6 +236,12 @@ const open = await request(LINK, { session: false, headers: { Range: 'bytes=0-49
 check('le lien se lit sans clé', open.status === 206 && open.data.length === 500)
 check('l’origine autorisée reçoit les en-têtes CORS', open.headers.get('access-control-allow-origin') === ORIGIN_OK, open.headers.get('access-control-allow-origin'))
 check('Content-Range est exposé au script', /Content-Range/.test(open.headers.get('access-control-expose-headers') ?? ''))
+const plainTag = await request(LINK, { session: false, headers: { Range: 'bytes=10-19' } })
+check(
+  'une balise audio d’un autre site peut charger le lien (CORP cross-origin)',
+  plainTag.headers.get('cross-origin-resource-policy') === 'cross-origin',
+  plainTag.headers.get('cross-origin-resource-policy'),
+)
 const foreign = await request(LINK, { session: false, headers: { Range: 'bytes=0-9', Origin: 'https://site-tiers.example' } })
 check('une origine non déclarée ne reçoit pas d’autorisation CORS', !foreign.headers.get('access-control-allow-origin'))
 const continued = await request(LINK, { session: false, headers: { Range: 'bytes=500-999' } })

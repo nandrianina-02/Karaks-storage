@@ -70,6 +70,7 @@ async function serve(request: Request, { params }: Context) {
         userAgent: request.headers.get('user-agent'),
       },
       corsOrigin: allowedOrigin(request, link.project.allowedOrigins),
+      embeddable: true,
     })
   } catch (error) {
     return toErrorResponse(error)
