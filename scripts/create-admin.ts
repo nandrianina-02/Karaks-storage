@@ -12,7 +12,9 @@
  * Google), il reçoit le rôle de super administrateur sans que son mot de passe change.
  *
  * Usage : npm run admin:create
- * La base visée est celle de DATABASE_URL.
+ *         npm run admin:create -- --production
+ * La base visée est celle de DATABASE_URL ; avec --production, celle de
+ * PRODUCTION_DATABASE_URL, lue dans .env sans avoir à la recopier.
  */
 import 'dotenv/config'
 
@@ -22,7 +24,20 @@ import { Writable } from 'node:stream'
 import { hashPassword } from 'better-auth/crypto'
 import { z } from 'zod'
 
-import { prisma } from '../src/lib/prisma'
+import type { PrismaClient } from '../src/generated/prisma/client'
+
+// La base est choisie avant de charger le client : il lit DATABASE_URL dès
+// son import, d'où l'import dynamique plus bas.
+if (process.argv.includes('--production')) {
+  if (!process.env.PRODUCTION_DATABASE_URL) {
+    console.error('PRODUCTION_DATABASE_URL est vide dans .env.')
+    process.exit(1)
+  }
+  process.env.DATABASE_URL = process.env.PRODUCTION_DATABASE_URL
+  process.env.DATABASE_POOL_MAX = '1'
+}
+
+let prisma: PrismaClient
 
 const MIN_PASSWORD = 12
 
@@ -68,6 +83,7 @@ async function ask(question: string, hidden = false): Promise<string> {
 }
 
 async function main() {
+  ;({ prisma } = await import('../src/lib/prisma'))
   const host = (() => {
     try {
       return new URL(process.env.DATABASE_URL ?? '').hostname
@@ -125,5 +141,5 @@ main()
   })
   .finally(() => {
     rl.close()
-    void prisma.$disconnect()
+    void prisma?.$disconnect()
   })
