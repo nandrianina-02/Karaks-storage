@@ -4,17 +4,18 @@ import Link from 'next/link'
 
 import {
   AppearanceSettings,
-  MembersForm,
   ProjectSettingsForm,
   StorageSettings,
   UsersAdmin,
   type ProviderRow,
 } from '@/components/settings/settings-forms'
+import { MembersForm } from '@/components/members/members-form'
 import { Card, EmptyState, PageHeader } from '@/components/ui/surface'
 import { projectDto } from '@/lib/api/serialize'
 import { isGoogleConfigured } from '@/lib/env'
 import { param, type SearchParams } from '@/lib/pages'
 import { prisma } from '@/lib/prisma'
+import { canTransferOwnership, listInvitations } from '@/lib/services/members'
 import { canDeleteProject } from '@/lib/services/projects'
 import { providerQuota } from '@/lib/storage'
 import { cn } from '@/lib/utils'
@@ -55,15 +56,28 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       />
     )
   } else if (tab === 'membres' && workspace.project) {
-    const members = await prisma.projectMember.findMany({
-      where: { projectId: workspace.project.id },
-      include: { user: { select: { id: true, name: true, email: true } } },
-      orderBy: { createdAt: 'asc' },
-    })
+    const [members, invitations] = await Promise.all([
+      prisma.projectMember.findMany({
+        where: { projectId: workspace.project.id },
+        include: { user: { select: { id: true, name: true, email: true } } },
+        orderBy: { createdAt: 'asc' },
+      }),
+      workspace.can('project:manage') ? listInvitations(workspace.project.id) : [],
+    ])
+    const myRole = members.find((member) => member.userId === workspace.user.id)?.role ?? null
     content = (
       <MembersForm
         project={workspace.project.publicId}
         editable={workspace.can('project:manage')}
+        canTransfer={canTransferOwnership(workspace.user.role, myRole)}
+        me={workspace.user.id}
+        invitations={invitations.map((invitation) => ({
+          id: invitation.id,
+          email: invitation.email,
+          role: invitation.role,
+          invitedBy: invitation.invitedBy?.name ?? null,
+          expiresAt: invitation.expiresAt.toISOString(),
+        }))}
         members={members.map((member) => ({
           userId: member.user.id,
           name: member.user.name,

@@ -22,6 +22,8 @@ const NOTABLE: AuditAction[] = [
   'CONNECT_PROVIDER',
   'CREATE_WEBHOOK',
   'LOGIN_FAILED',
+  'ADD_MEMBER',
+  'TRANSFER_OWNERSHIP',
 ]
 
 export async function notificationsFor(userId: string, take = 12) {

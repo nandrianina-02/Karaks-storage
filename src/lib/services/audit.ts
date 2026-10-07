@@ -87,4 +87,8 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   DELETE_WEBHOOK: 'Webhook supprimé',
   LOGIN: 'Connexion',
   LOGIN_FAILED: 'Échec de connexion',
+  ADD_MEMBER: 'Membre ajouté',
+  REMOVE_MEMBER: 'Membre retiré',
+  INVITE_MEMBER: 'Invitation',
+  TRANSFER_OWNERSHIP: 'Propriété transférée',
 }

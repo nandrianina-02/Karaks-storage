@@ -1,6 +1,19 @@
 'use client'
 
-import { Bell, CheckCheck, CloudUpload, KeyRound, Layers, ShieldAlert, Trash2, Undo2, Unplug, Webhook } from 'lucide-react'
+import {
+  Bell,
+  CheckCheck,
+  CloudUpload,
+  Crown,
+  KeyRound,
+  Layers,
+  ShieldAlert,
+  Trash2,
+  Undo2,
+  Unplug,
+  UserPlus,
+  Webhook,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Loader } from '@/components/brand/loader'
@@ -34,6 +47,8 @@ const ICONS: Record<string, typeof Bell> = {
   CONNECT_PROVIDER: Unplug,
   CREATE_WEBHOOK: Webhook,
   LOGIN_FAILED: ShieldAlert,
+  ADD_MEMBER: UserPlus,
+  TRANSFER_OWNERSHIP: Crown,
 }
 
 export function NotificationsMenu() {

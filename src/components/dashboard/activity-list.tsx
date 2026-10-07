@@ -1,17 +1,21 @@
 import {
   CirclePlay,
   CloudUpload,
+  Crown,
   Download,
   FolderPlus,
   KeyRound,
   Layers,
   Link2,
   LogIn,
+  Mail,
   PencilLine,
   ShieldAlert,
   Trash2,
   Undo2,
   Unplug,
+  UserMinus,
+  UserPlus,
   Webhook,
   type LucideIcon,
 } from 'lucide-react'
@@ -42,6 +46,10 @@ export const ACTION_ICONS: Record<string, LucideIcon> = {
   DELETE_WEBHOOK: Webhook,
   LOGIN: LogIn,
   LOGIN_FAILED: ShieldAlert,
+  ADD_MEMBER: UserPlus,
+  REMOVE_MEMBER: UserMinus,
+  INVITE_MEMBER: Mail,
+  TRANSFER_OWNERSHIP: Crown,
 }
 
 export function ActivityList({ items, empty = 'Aucune activité pour l’instant.' }: { items: LogItem[]; empty?: string }) {

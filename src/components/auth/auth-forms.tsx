@@ -176,7 +176,7 @@ export function SignInForm({ google }: { google: boolean }) {
       </form>
       <p className="mt-6 text-sm text-ink-2">
         Pas encore de compte ?{' '}
-        <Link href="/inscription" className="font-medium text-accent hover:underline">
+        <Link href={params.get('redirect') ? `/inscription?redirect=${encodeURIComponent(params.get('redirect') ?? '')}` : '/inscription'} className="font-medium text-accent hover:underline">
           Créer un compte
         </Link>
       </p>
@@ -186,8 +186,11 @@ export function SignInForm({ google }: { google: boolean }) {
 
 export function SignUpForm({ google }: { google: boolean }) {
   const router = useRouter()
+  const params = useSearchParams()
+  const redirect = params.get('redirect')
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+  // Arrivée par une invitation : l'adresse est déjà connue.
+  const [email, setEmail] = useState(params.get('email') ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -202,7 +205,7 @@ export function SignUpForm({ google }: { google: boolean }) {
       setBusy(false)
       return
     }
-    router.push('/dashboard')
+    router.push(safeRedirect(redirect))
     router.refresh()
   }
 
@@ -241,7 +244,7 @@ export function SignUpForm({ google }: { google: boolean }) {
       </form>
       <p className="mt-6 text-sm text-ink-2">
         Déjà inscrit ?{' '}
-        <Link href="/connexion" className="font-medium text-accent hover:underline">
+        <Link href={redirect ? `/connexion?redirect=${encodeURIComponent(redirect)}` : '/connexion'} className="font-medium text-accent hover:underline">
           Se connecter
         </Link>
       </p>

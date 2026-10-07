@@ -161,31 +161,6 @@ export async function updateProject(
   return project
 }
 
-export const memberInput = z.object({
-  email: z.string().trim().toLowerCase().email('Adresse invalide'),
-  role: z.enum(['ADMIN', 'DEVELOPER', 'VIEWER']),
-})
-
-export async function addMember(projectId: string, input: z.infer<typeof memberInput>) {
-  const user = await prisma.user.findUnique({ where: { email: input.email } })
-  if (!user) {
-    throw new ApiError('not_found', 'Aucun compte n’utilise cette adresse : la personne doit d’abord s’inscrire.')
-  }
-  return prisma.projectMember.upsert({
-    where: { projectId_userId: { projectId, userId: user.id } },
-    create: { projectId, userId: user.id, role: input.role },
-    update: { role: input.role },
-  })
-}
-
-export async function removeMember(projectId: string, userId: string) {
-  const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } } })
-  if (!member) throw new ApiError('not_found', 'Membre introuvable.')
-  // Un projet sans propriétaire ne pourrait plus être administré.
-  if (member.role === 'OWNER') throw new ApiError('conflict', 'Le propriétaire ne peut pas être retiré.')
-  await prisma.projectMember.delete({ where: { id: member.id } })
-}
-
 /** Supprimer un projet : propriétaire du projet ou super administrateur. */
 export function canDeleteProject(globalRole: GlobalRoleName, projectRole: string | null): boolean {
   return globalRole === 'SUPER_ADMIN' || projectRole === 'OWNER'

@@ -1,6 +1,6 @@
 'use client'
 
-import { CircleAlert, CircleCheck, Monitor, Moon, Save, Sun, Trash2, TriangleAlert, UserPlus, Unplug } from 'lucide-react'
+import { CircleAlert, CircleCheck, Monitor, Moon, Save, Sun, Trash2, TriangleAlert, Unplug } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
@@ -277,115 +277,6 @@ export function DeleteProjectCard({ project, stats }: { project: ProjectDto; sta
         </div>
       </Dialog>
     </Card>
-  )
-}
-
-export interface MemberRow {
-  userId: string
-  name: string
-  email: string
-  role: string
-  since: string
-}
-
-const ROLE_LABELS: Record<string, string> = { OWNER: 'Propriétaire', ADMIN: 'Administration', DEVELOPER: 'Développement', VIEWER: 'Lecture seule' }
-
-export function MembersForm({ project, members, editable }: { project: string; members: MemberRow[]; editable: boolean }) {
-  const router = useRouter()
-  const toast = useToast()
-  const [, startTransition] = useTransition()
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('DEVELOPER')
-  const [busy, setBusy] = useState(false)
-  const refresh = () => startTransition(() => router.refresh())
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault()
-    setBusy(true)
-    try {
-      await api(`/api/v1/projects/${project}/members`, { method: 'POST', body: { email, role } })
-      toast.success('Membre ajouté', email)
-      setEmail('')
-      refresh()
-    } catch (error) {
-      toast.error('Ajout impossible', errorMessage(error))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function change(member: MemberRow, next: string) {
-    try {
-      await api(`/api/v1/projects/${project}/members`, { method: 'POST', body: { email: member.email, role: next } })
-      toast.success('Rôle modifié', `${member.name} : ${ROLE_LABELS[next]}`)
-      refresh()
-    } catch (error) {
-      toast.error('Modification impossible', errorMessage(error))
-    }
-  }
-
-  async function remove(member: MemberRow) {
-    try {
-      await api(`/api/v1/projects/${project}/members/${member.userId}`, { method: 'DELETE' })
-      toast.success('Membre retiré', member.name)
-      refresh()
-    } catch (error) {
-      toast.error('Retrait impossible', errorMessage(error))
-    }
-  }
-
-  return (
-    <div className="space-y-5">
-      {editable && (
-        <Card className="animate-rise stagger-1">
-          <CardHeader title="Ajouter un membre" description="La personne doit déjà avoir un compte Karaks Storage." />
-          <form onSubmit={add} className="flex flex-wrap items-end gap-3 px-5 pb-5">
-            <Field label="Adresse email" htmlFor="m-email" className="min-w-60 flex-1">
-              <Input id="m-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            </Field>
-            <Field label="Rôle" htmlFor="m-role">
-              <Select id="m-role" value={role} onChange={(event) => setRole(event.target.value)}>
-                <option value="ADMIN">Administration</option>
-                <option value="DEVELOPER">Développement</option>
-                <option value="VIEWER">Lecture seule</option>
-              </Select>
-            </Field>
-            <Button type="submit" variant="primary" loading={busy} icon={<UserPlus className="h-4 w-4" />}>
-              Ajouter
-            </Button>
-          </form>
-        </Card>
-      )}
-      <Card className="animate-rise stagger-2">
-        <CardHeader title="Membres du projet" description="Administration : tout ; Développement : tout sauf les réglages ; Lecture seule : lister et diffuser." />
-        <ul>
-          {members.map((member) => (
-            <li key={member.userId} className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-ink">{member.name}</p>
-                <p className="text-xs text-muted">
-                  {member.email} · depuis le {formatDate(member.since)}
-                </p>
-              </div>
-              {member.role === 'OWNER' || !editable ? (
-                <Badge tone={member.role === 'OWNER' ? 'accent' : 'neutral'}>{ROLE_LABELS[member.role]}</Badge>
-              ) : (
-                <>
-                  <Select value={member.role} onChange={(event) => change(member, event.target.value)} className="h-9 w-auto text-[0.82rem]" aria-label={`Rôle de ${member.name}`}>
-                    <option value="ADMIN">Administration</option>
-                    <option value="DEVELOPER">Développement</option>
-                    <option value="VIEWER">Lecture seule</option>
-                  </Select>
-                  <Button size="sm" variant="danger-ghost" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => remove(member)}>
-                    Retirer
-                  </Button>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Card>
-    </div>
   )
 }
 
