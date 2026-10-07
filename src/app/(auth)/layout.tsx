@@ -27,7 +27,15 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
           <ThemeToggle />
         </div>
         <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">{children}</main>
-        <p className="text-xs text-muted">Karaks Storage — stockage, Media API et diffusion sécurisée.</p>
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+          <span>Karaks Storage — stockage, Media API et diffusion sécurisée.</span>
+          <Link href="/confidentialite" className="hover:text-ink">
+            Confidentialité
+          </Link>
+          <Link href="/conditions" className="hover:text-ink">
+            Conditions
+          </Link>
+        </p>
       </div>
 
       <aside className="relative hidden border-l border-line bg-surface lg:flex lg:flex-col lg:justify-center lg:px-14">
