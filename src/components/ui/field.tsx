@@ -62,8 +62,7 @@ export function Checkbox({ className, ...props }: ComponentProps<'input'>) {
       type="checkbox"
       className={cn(
         'h-4 w-4 shrink-0 cursor-pointer appearance-none rounded-[4px] border border-line-strong bg-surface transition-colors',
-        'checked:border-accent checked:bg-accent',
-        "checked:bg-[url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17l9-10'/%3E%3C/svg%3E\")] bg-center bg-no-repeat bg-[length:12px]",
+        'checkbox-mark checked:border-accent checked:bg-accent',
         'indeterminate:border-accent indeterminate:bg-accent',
         className,
       )}
