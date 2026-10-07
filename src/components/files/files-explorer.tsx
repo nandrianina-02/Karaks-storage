@@ -1,8 +1,10 @@
 'use client'
 
 import {
+  ArrowDownWideNarrow,
   ArrowLeft,
   ArrowRight,
+  ArrowUpNarrowWide,
   ChevronRight,
   CloudUpload,
   Download,
@@ -15,6 +17,7 @@ import {
   PencilLine,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Trash2,
   X,
 } from 'lucide-react'
@@ -34,6 +37,13 @@ import { useToast } from '@/components/ui/toast'
 import { useUploads } from '@/components/upload/upload-manager'
 import type { FileDto, FolderDto } from '@/lib/api/serialize'
 import { api, downloadUrl, errorMessage, streamUrl } from '@/lib/client/api'
+import {
+  activeFilterCount,
+  ADDED_FILTERS,
+  SIZE_FILTERS,
+  TYPE_FILTERS,
+  type FileFilters,
+} from '@/lib/files/filters'
 import { ACCEPT_ATTRIBUTE, formatBytes } from '@/lib/files/types'
 import type { Permission } from '@/lib/security/permissions'
 import { cn, formatDate } from '@/lib/utils'
@@ -44,6 +54,9 @@ export interface ExplorerQuery {
   view: 'list' | 'grid'
   trash: boolean
   page: number
+  /** Sens du tri ; nul : le sens naturel du critère. */
+  order: 'asc' | 'desc' | null
+  filters: FileFilters
 }
 
 const SORTS: { value: ExplorerQuery['sort']; label: string }[] = [
@@ -76,6 +89,7 @@ export function FilesExplorer({
   stats,
   bottom,
   trashRetentionDays,
+  filterFolder,
 }: {
   project: string
   provider: ProviderInfo
@@ -91,6 +105,8 @@ export function FilesExplorer({
   stats: ReactNode
   bottom: ReactNode
   trashRetentionDays: number
+  /** Dossier ouvert avant la recherche : la recherche peut s'y limiter. */
+  filterFolder: { id: string; name: string } | null
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -104,6 +120,9 @@ export function FilesExplorer({
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState<FileDialog>(null)
   const [newFolder, setNewFolder] = useState(false)
+  const filterCount = activeFilterCount(query.filters)
+  const filtering = Boolean(query.search) || filterCount > 0
+  const [filtersOpen, setFiltersOpen] = useState(filterCount > 0)
   const [searchOpen, setSearchOpen] = useState(Boolean(query.search))
   const [search, setSearch] = useState(query.search)
   const [dragging, setDragging] = useState(false)
@@ -163,7 +182,8 @@ export function FilesExplorer({
   const current = path.at(-1)
   const checkedFiles = files.filter((file) => checked.has(file.id))
   const allChecked = files.length > 0 && checked.size === files.length
-  const showFolders = !query.trash && !query.search && query.page === 1
+  const showFolders = !query.trash && !filtering && query.page === 1
+  const direction = query.order ?? (query.sort === 'name' || query.sort === 'type' ? 'asc' : 'desc')
   const visibleFolders = showFolders ? folders : []
   const empty = files.length === 0 && visibleFolders.length === 0
   const from = (query.page - 1) * limit + 1
@@ -341,6 +361,21 @@ export function FilesExplorer({
                 </button>
               )}
 
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((open) => !open)}
+                aria-expanded={filtersOpen}
+                aria-controls="files-filters"
+                className={cn(
+                  'flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-[0.8rem] transition-colors',
+                  filterCount > 0 ? 'border-accent text-accent' : 'border-line text-ink-2 hover:bg-surface-2 hover:text-ink',
+                )}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className="hidden sm:inline">Filtres</span>
+                {filterCount > 0 && <span className="rounded bg-accent px-1.5 text-[0.7rem] font-medium text-accent-ink tabular-nums">{filterCount}</span>}
+              </button>
+
               <div className="flex rounded-lg border border-line p-0.5" role="group" aria-label="Affichage">
                 {(['list', 'grid'] as const).map((view) => (
                   <button
@@ -374,6 +409,15 @@ export function FilesExplorer({
                   ))}
                 </Select>
               </label>
+              <button
+                type="button"
+                onClick={() => navigate({ sens: direction === 'asc' ? 'desc' : 'asc' }, true)}
+                className="grid h-9 w-9 place-items-center rounded-lg border border-line text-ink-2 hover:bg-surface-2 hover:text-ink"
+                aria-label={direction === 'asc' ? 'Ordre croissant, passer en décroissant' : 'Ordre décroissant, passer en croissant'}
+                title={direction === 'asc' ? 'Croissant' : 'Décroissant'}
+              >
+                {direction === 'asc' ? <ArrowUpNarrowWide className="h-4 w-4" /> : <ArrowDownWideNarrow className="h-4 w-4" />}
+              </button>
 
               <button
                 type="button"
@@ -390,6 +434,15 @@ export function FilesExplorer({
               </button>
             </div>
           </div>
+
+          {filtersOpen && (
+            <FilterBar
+              filters={query.filters}
+              inFolder={Boolean(filterFolder)}
+              folderName={filterFolder?.name ?? null}
+              onChange={navigate}
+            />
+          )}
 
           {checked.size > 0 && (
             <div className="animate-fade flex flex-wrap items-center gap-2 border-b border-line bg-accent-soft px-4 py-2 text-sm">
@@ -420,15 +473,29 @@ export function FilesExplorer({
 
           {empty ? (
             <EmptyState
-              icon={query.trash ? <Trash2 /> : query.search ? <Search /> : <CloudUpload />}
-              title={query.trash ? 'La corbeille est vide' : query.search ? `Aucun fichier ne correspond à « ${query.search} »` : 'Ce dossier est vide'}
+              icon={filtering ? <Search /> : query.trash ? <Trash2 /> : <CloudUpload />}
+              title={
+                query.search
+                  ? `Aucun fichier ne correspond à « ${query.search} »`
+                  : filterCount > 0
+                    ? 'Aucun fichier ne correspond à ces filtres'
+                    : query.trash
+                      ? 'La corbeille est vide'
+                      : 'Ce dossier est vide'
+              }
               description={
-                query.trash || query.search
+                filterCount > 0
+                  ? 'Élargissez la taille ou la période, ou cherchez dans tout le projet.'
+                  : query.trash || query.search
                   ? undefined
                   : 'Déposez des fichiers ici, ou utilisez le bouton Téléverser. Audio, images, vidéos et documents sont acceptés.'
               }
               action={
-                !query.trash && !query.search && can.has('files:upload') ? (
+                filterCount > 0 ? (
+                  <Button icon={<X className="h-4 w-4" />} onClick={() => navigate(CLEAR_FILTERS)}>
+                    Effacer les filtres
+                  </Button>
+                ) : !query.trash && !query.search && can.has('files:upload') ? (
                   <Button variant="primary" icon={<CloudUpload className="h-4 w-4" />} onClick={() => picker.current?.click()}>
                     Téléverser des fichiers
                   </Button>
@@ -707,5 +774,100 @@ export function NewFolderDialog({
         </div>
       </form>
     </Dialog>
+  )
+}
+
+const CLEAR_FILTERS = { type: null, taille: null, ajout: null, du: null, au: null, portee: null }
+
+/**
+ * Barre de recherche avancée : chaque choix s'applique aussitôt, par
+ * l'adresse, comme le tri. Pas de bouton « Appliquer » à retenir.
+ */
+function FilterBar({
+  filters,
+  inFolder,
+  folderName,
+  onChange,
+}: {
+  filters: FileFilters
+  inFolder: boolean
+  folderName: string | null
+  onChange: (change: Record<string, string | null>) => void
+}) {
+  const count = activeFilterCount(filters)
+  const selectClass = 'h-9 w-auto min-w-36 text-[0.8rem]'
+  return (
+    <div id="files-filters" className="animate-fade flex flex-wrap items-end gap-3 border-b border-line bg-surface-2 px-4 py-3">
+      <Field label="Type" htmlFor="f-type">
+        <Select id="f-type" value={filters.type ?? ''} onChange={(event) => onChange({ type: event.target.value || null })} className={selectClass}>
+          <option value="">Tous</option>
+          {TYPE_FILTERS.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Taille" htmlFor="f-size">
+        <Select id="f-size" value={filters.size ?? ''} onChange={(event) => onChange({ taille: event.target.value || null })} className={selectClass}>
+          <option value="">Toutes</option>
+          {SIZE_FILTERS.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Ajouté" htmlFor="f-added">
+        <Select
+          id="f-added"
+          value={filters.added ?? ''}
+          onChange={(event) => onChange({ ajout: event.target.value || null, ...(event.target.value === 'plage' ? {} : { du: null, au: null }) })}
+          className={selectClass}
+        >
+          <option value="">N’importe quand</option>
+          {ADDED_FILTERS.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {filters.added === 'plage' && (
+        <>
+          <Field label="Du" htmlFor="f-from">
+            <Input
+              id="f-from"
+              type="date"
+              value={filters.from ?? ''}
+              max={filters.to ?? undefined}
+              onChange={(event) => onChange({ du: event.target.value || null })}
+              className="h-9 w-auto text-[0.8rem]"
+            />
+          </Field>
+          <Field label="Au" htmlFor="f-to">
+            <Input
+              id="f-to"
+              type="date"
+              value={filters.to ?? ''}
+              min={filters.from ?? undefined}
+              onChange={(event) => onChange({ au: event.target.value || null })}
+              className="h-9 w-auto text-[0.8rem]"
+            />
+          </Field>
+        </>
+      )}
+      {inFolder && (
+        <label className="flex h-9 items-center gap-2 text-[0.8rem] text-ink-2">
+          <Checkbox checked={filters.inFolder} onChange={(event) => onChange({ portee: event.target.checked ? 'dossier' : null })} />
+          {folderName ? `Seulement dans « ${folderName} »` : 'Seulement dans ce dossier'}
+        </label>
+      )}
+      {count > 0 && (
+        <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={() => onChange(CLEAR_FILTERS)} className="ml-auto">
+          Effacer
+        </Button>
+      )}
+    </div>
   )
 }

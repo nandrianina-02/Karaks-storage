@@ -6,6 +6,7 @@ import { PeriodSelect, SeriesChart } from '@/components/dashboard/usage-card'
 import { FilesExplorer, type ExplorerQuery } from '@/components/files/files-explorer'
 import { Card, CardHeader } from '@/components/ui/surface'
 import { fileDto, folderDto } from '@/lib/api/serialize'
+import { activeFilterCount, filterCriteria, parseFilters } from '@/lib/files/filters'
 import { chartSeries, param, periodOf, providerInfo, type SearchParams } from '@/lib/pages'
 import { prisma } from '@/lib/prisma'
 import { listFiles } from '@/lib/services/files'
@@ -30,7 +31,12 @@ export default async function FilesPage({ searchParams }: { searchParams: Search
     view: param(params, 'vue') === 'grille' ? 'grid' : 'list',
     trash: param(params, 'corbeille') === '1',
     page: Math.max(1, Number(param(params, 'page')) || 1),
+    order: param(params, 'sens') === 'asc' ? 'asc' : param(params, 'sens') === 'desc' ? 'desc' : null,
+    filters: parseFilters((name) => param(params, name)),
   }
+  // Une recherche ou un filtre parcourt tout le projet, sauf si l'on a
+  // demandé de rester dans le dossier ouvert.
+  const filtering = Boolean(query.search) || activeFilterCount(query.filters) > 0
   const days = periodOf(param(params, 'periode'))
 
   // Un dossier inconnu (lien périmé) ramène à la racine plutôt qu'à une erreur.
@@ -38,7 +44,7 @@ export default async function FilesPage({ searchParams }: { searchParams: Search
   const folder = requestedFolder
     ? await prisma.folder.findFirst({ where: { projectId: project.id, publicId: requestedFolder } })
     : null
-  const folderId = query.trash || query.search ? null : folder?.publicId ?? null
+  const folderId = query.trash || (filtering && !query.filters.inFolder) ? null : folder?.publicId ?? null
 
   const [folders, path, result, overview, series, recent, selectedRow] = await Promise.all([
     listFolders(project.id, folderId),
@@ -46,9 +52,11 @@ export default async function FilesPage({ searchParams }: { searchParams: Search
     listFiles(project.id, {
       search: query.search || undefined,
       folderId: folderId ?? undefined,
-      folder: !query.search && !query.trash && !folderId ? 'root' : undefined,
+      folder: !filtering && !query.trash && !folderId ? 'root' : undefined,
       status: query.trash ? 'trashed' : 'active',
+      ...filterCriteria(query.filters),
       sort: query.sort,
+      order: query.order ?? undefined,
       page: query.page,
       limit: LIMIT,
     }),
@@ -82,6 +90,7 @@ export default async function FilesPage({ searchParams }: { searchParams: Search
       query={query}
       initialSelected={selectedRow ? fileDto(selectedRow) : null}
       trashRetentionDays={project.trashRetentionDays}
+      filterFolder={folder && !query.trash ? { id: folder.publicId, name: folder.name } : null}
       stats={<OverviewTiles overview={overview} />}
       bottom={
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
