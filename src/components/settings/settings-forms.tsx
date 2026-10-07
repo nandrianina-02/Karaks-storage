@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/toast'
 import type { ProjectDto } from '@/lib/api/serialize'
 import { api, errorMessage } from '@/lib/client/api'
 import { formatBytes } from '@/lib/files/types'
+import { PLAN_IDS, PLANS, planLabel, planLimits, type PlanId } from '@/lib/plans'
 import { cn, formatDate } from '@/lib/utils'
 
 const MB = 1024 * 1024
@@ -21,11 +22,14 @@ const MB = 1024 * 1024
 export function ProjectSettingsForm({
   project,
   editable,
+  canSetLimits,
   deletable,
   stats,
 }: {
   project: ProjectDto
   editable: boolean
+  /** Offre et limites : super administrateur seulement. */
+  canSetLimits: boolean
   deletable: boolean
   stats: { files: number; bytes: number; keys: number }
 }) {
@@ -40,6 +44,20 @@ export function ProjectSettingsForm({
   const [rate, setRate] = useState(String(project.rateLimitPerMinute))
   const [linkRate, setLinkRate] = useState(String(project.signedUrlPerMinute))
   const [retention, setRetention] = useState(String(project.trashRetentionDays))
+  const [plan, setPlan] = useState<PlanId>(project.plan)
+  const custom = plan === 'SUR_MESURE'
+  const limitsEditable = editable && canSetLimits && custom
+
+  function choosePlan(next: PlanId) {
+    setPlan(next)
+    // Les champs montrent aussitôt ce que l'offre va appliquer.
+    const limits = planLimits(next)
+    if (!limits) return
+    setMaxFile(String(Math.round(limits.maxFileSize / MB)))
+    setQuota(limits.storageQuota ? String(Math.round(limits.storageQuota / (1024 * MB))) : '')
+    setRate(String(limits.rateLimitPerMinute))
+    setLinkRate(String(limits.signedUrlPerMinute))
+  }
   const [busy, setBusy] = useState(false)
 
   async function save(event: React.FormEvent) {
@@ -52,11 +70,16 @@ export function ProjectSettingsForm({
           name,
           description: description || null,
           allowedOrigins: origins.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean),
-          maxFileSize: Number(maxFile) * MB,
-          storageQuota: quota ? Math.round(Number(quota) * 1024 * MB) : null,
-          rateLimitPerMinute: Number(rate),
-          signedUrlPerMinute: Number(linkRate),
           trashRetentionDays: Number(retention),
+          ...(canSetLimits ? { plan } : {}),
+          ...(canSetLimits && custom
+            ? {
+                maxFileSize: Number(maxFile) * MB,
+                storageQuota: quota ? Math.round(Number(quota) * 1024 * MB) : null,
+                rateLimitPerMinute: Number(rate),
+                signedUrlPerMinute: Number(linkRate),
+              }
+            : {}),
         },
       })
       toast.success('Réglages enregistrés')
@@ -99,8 +122,49 @@ export function ProjectSettingsForm({
       </Card>
 
       <Card className="animate-rise stagger-3">
-        <CardHeader title="Limites et quotas" description="Une requête au-delà d’une limite reçoit la réponse 429." />
-        <fieldset disabled={!editable} className="grid gap-4 px-5 pb-5 sm:grid-cols-2">
+        <CardHeader
+          title="Offre et limites"
+          description="Une requête au-delà d’une limite reçoit la réponse 429 ; un envoi au-delà du quota, la réponse 507."
+          actions={<Badge tone={custom ? 'neutral' : 'accent'}>{planLabel(plan)}</Badge>}
+        />
+        {canSetLimits && editable && (
+          <div className="grid gap-2 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-4" role="radiogroup" aria-label="Offre du projet">
+            {PLAN_IDS.map((id) => {
+              const limits = planLimits(id)
+              const selected = plan === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => choosePlan(id)}
+                  className={cn(
+                    'rounded-lg border px-3.5 py-3 text-left transition-colors',
+                    selected ? 'border-accent bg-accent-soft' : 'border-line hover:border-line-strong hover:bg-surface-2',
+                  )}
+                >
+                  <span className="flex items-center justify-between text-sm font-medium text-ink">
+                    {planLabel(id)}
+                    {selected && <CircleCheck className="h-4 w-4 text-accent" />}
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-ink-2">
+                    {limits
+                      ? `${limits.storageQuota ? formatBytes(limits.storageQuota) : 'Sans quota'} · ${formatBytes(limits.maxFileSize)} par fichier · ${limits.rateLimitPerMinute} req/min`
+                      : 'Limites saisies à la main.'}
+                  </span>
+                  {id !== 'SUR_MESURE' && <span className="mt-1 block text-xs text-muted">{PLANS[id].summary}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {!canSetLimits && (
+          <p className="mx-5 mb-4 rounded-lg bg-surface-2 px-3 py-2 text-xs text-ink-2">
+            Ces limites découlent de l’offre du projet. Seul un super administrateur peut la changer.
+          </p>
+        )}
+        <fieldset disabled={!limitsEditable} className="grid gap-4 px-5 pb-4 sm:grid-cols-2">
           <Field label="Taille maximale d’un fichier (Mo)" htmlFor="s-max">
             <Input id="s-max" type="number" min={1} max={5120} value={maxFile} onChange={(event) => setMaxFile(event.target.value)} />
           </Field>
@@ -113,6 +177,8 @@ export function ProjectSettingsForm({
           <Field label="Liens temporaires créés par minute" htmlFor="s-links">
             <Input id="s-links" type="number" min={1} max={1000} value={linkRate} onChange={(event) => setLinkRate(event.target.value)} />
           </Field>
+        </fieldset>
+        <fieldset disabled={!editable} className="grid gap-4 border-t border-line px-5 pt-4 pb-5 sm:grid-cols-2">
           <Field
             label="Conservation de la corbeille (jours)"
             htmlFor="s-retention"

@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { ApiError } from '@/lib/api/errors'
 import { newPublicId } from '@/lib/ids'
+import { DEFAULT_PLAN, PLAN_IDS, planLabel, planLimits, type PlanId } from '@/lib/plans'
 import { prisma } from '@/lib/prisma'
 import { audit, type Actor } from '@/lib/services/audit'
 import { canCreateProject, type GlobalRoleName } from '@/lib/security/permissions'
@@ -31,7 +32,22 @@ export const projectSettingsInput = projectInput.partial().extend({
   rateLimitPerMinute: z.number().int().min(10).max(10_000).optional(),
   signedUrlPerMinute: z.number().int().min(1).max(1_000).optional(),
   trashRetentionDays: z.number().int().min(1).max(365).optional(),
+  plan: z.enum(PLAN_IDS).optional(),
 })
+
+const LIMIT_FIELDS = ['maxFileSize', 'storageQuota', 'rateLimitPerMinute', 'signedUrlPerMinute'] as const
+
+/** Valeurs de base d'une offre, au format attendu par Prisma. */
+function limitsData(plan: PlanId) {
+  const limits = planLimits(plan)
+  if (!limits) return {}
+  return {
+    maxFileSize: BigInt(limits.maxFileSize),
+    storageQuota: limits.storageQuota === null ? null : BigInt(limits.storageQuota),
+    rateLimitPerMinute: limits.rateLimitPerMinute,
+    signedUrlPerMinute: limits.signedUrlPerMinute,
+  }
+}
 
 export function slugify(input: string): string {
   return (
@@ -90,6 +106,8 @@ export async function createProject(
       ownerId: user.id,
       providerId: provider.id,
       providerFolderId,
+      plan: DEFAULT_PLAN,
+      ...limitsData(DEFAULT_PLAN),
       members: { create: { userId: user.id, role: 'OWNER' } },
     },
   })
@@ -97,7 +115,30 @@ export async function createProject(
   return project
 }
 
-export async function updateProject(projectId: string, input: z.infer<typeof projectSettingsInput>, actor: Actor) {
+/**
+ * L'offre et les limites relèvent du super administrateur : un propriétaire
+ * de projet qui pourrait relever son propre quota rendrait les offres
+ * décoratives.
+ */
+export async function updateProject(
+  projectId: string,
+  input: z.infer<typeof projectSettingsInput>,
+  actor: Actor,
+  options: { canSetLimits: boolean },
+) {
+  const touchesLimits = input.plan !== undefined || LIMIT_FIELDS.some((field) => input[field] !== undefined)
+  if (touchesLimits && !options.canSetLimits) {
+    throw new ApiError('forbidden', 'L’offre et les limites d’un projet sont réservées au super administrateur.')
+  }
+  const current = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } })
+  const plan = input.plan ?? current.plan
+  const manual = LIMIT_FIELDS.filter((field) => input[field] !== undefined)
+  if (plan !== 'SUR_MESURE' && manual.length > 0) {
+    throw new ApiError('bad_request', `Les limites suivent l’offre ${planLabel(plan)} : passez le projet en sur mesure pour les saisir.`, {
+      fields: manual,
+    })
+  }
+
   const project = await prisma.project.update({
     where: { id: projectId },
     data: {
@@ -110,6 +151,10 @@ export async function updateProject(projectId: string, input: z.infer<typeof pro
       rateLimitPerMinute: input.rateLimitPerMinute,
       signedUrlPerMinute: input.signedUrlPerMinute,
       trashRetentionDays: input.trashRetentionDays,
+      plan: input.plan,
+      // Choisir une offre recopie ses limites ; passer en sur mesure garde
+      // les valeurs en place comme point de départ.
+      ...(input.plan && input.plan !== current.plan ? limitsData(input.plan) : {}),
     },
   })
   await audit(actor, { action: 'UPDATE_PROJECT', projectId, target: project.name, details: { fields: Object.keys(input) } })

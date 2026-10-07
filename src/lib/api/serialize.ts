@@ -74,6 +74,7 @@ export function projectDto(project: Project & { role?: string | null }) {
     rateLimitPerMinute: project.rateLimitPerMinute,
     signedUrlPerMinute: project.signedUrlPerMinute,
     trashRetentionDays: project.trashRetentionDays,
+    plan: project.plan,
     role: project.role ?? null,
     createdAt: project.createdAt.toISOString(),
   }

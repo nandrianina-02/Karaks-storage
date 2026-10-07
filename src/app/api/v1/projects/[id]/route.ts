@@ -23,7 +23,7 @@ export const PATCH = handle(async (request: Request, { params }: Params<{ id: st
     throw new ApiError('forbidden', 'Permission manquante : project:manage.')
   }
   const input = projectSettingsInput.parse(await readJson(request))
-  const updated = await updateProject(project.id, input, caller.actor)
+  const updated = await updateProject(project.id, input, caller.actor, { canSetLimits: caller.user?.role === 'SUPER_ADMIN' })
   return ok({ project: projectDto(updated) })
 })
 

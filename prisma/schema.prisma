@@ -176,6 +176,14 @@ model StorageProvider {
 // Projets (CDS 7)
 // ---------------------------------------------------------------------------
 
+/// Offres d'un projet (voir src/lib/plans.ts).
+enum ProjectPlan {
+  ESSAI
+  STANDARD
+  PRO
+  SUR_MESURE
+}
+
 model Project {
   id          String  @id @default(cuid())
   /// Identifiant public, du type `prj_k82hd0`.
@@ -200,6 +208,8 @@ model Project {
   signedUrlPerMinute Int  @default(30)
   /// Jours passés à la corbeille avant suppression définitive automatique.
   trashRetentionDays Int  @default(30)
+  /// Offre : fixe les quatre limites ci-dessus, sauf en sur mesure.
+  plan ProjectPlan @default(SUR_MESURE)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

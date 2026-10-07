@@ -49,6 +49,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       <ProjectSettingsForm
         project={projectDto(project)}
         editable={workspace.can('project:manage')}
+        canSetLimits={isSuperAdmin}
         deletable={canDeleteProject(workspace.user.role, role)}
         stats={{ files: size._count._all, bytes: Number(size._sum.size ?? 0), keys }}
       />
