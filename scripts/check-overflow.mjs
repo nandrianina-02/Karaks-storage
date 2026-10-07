@@ -12,8 +12,9 @@ await page.goto(`${BASE}/connexion`, { waitUntil: 'networkidle' })
 await page.fill('#email', process.env.ADMIN_EMAIL ?? 'admin@karaks-storage.local')
 await page.fill('#password', process.env.ADMIN_PASSWORD ?? 'ks-admin-dev-2026')
 for (let attempt = 0; attempt < 3; attempt += 1) {
+  if (!page.url().includes('/connexion')) break
   await page.click('button[type="submit"]')
-  if (await page.waitForURL((url) => !url.pathname.startsWith('/connexion'), { timeout: 8000 }).then(() => true).catch(() => false)) break
+  if (await page.waitForURL((url) => !url.pathname.startsWith('/connexion'), { timeout: 30000 }).then(() => true).catch(() => false)) break
   await page.waitForTimeout(61000)
 }
 let failures = 0

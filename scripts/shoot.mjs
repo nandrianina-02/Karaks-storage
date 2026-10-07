@@ -36,7 +36,7 @@ if (process.env.NO_LOGIN !== '1') {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.click('button[type="submit"]')
     const signedIn = await page
-      .waitForURL((url) => !url.pathname.startsWith('/connexion'), { timeout: 8000 })
+      .waitForURL((url) => !url.pathname.startsWith('/connexion'), { timeout: 30000 })
       .then(() => true)
       .catch(() => false)
     if (signedIn) break

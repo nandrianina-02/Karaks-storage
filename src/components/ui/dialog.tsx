@@ -1,7 +1,7 @@
 'use client'
 
 import { X } from 'lucide-react'
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { cn } from '@/lib/utils'
@@ -35,11 +35,21 @@ export function Dialog({
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
 
+  // La fonction de fermeture change à chaque rendu chez la plupart des
+  // appelants. Si l'effet d'ouverture en dépendait, il se rejouerait à chaque
+  // frappe dans un champ : le focus repartait vers l'élément d'origine puis
+  // revenait au premier champ, et la saisie se perdait. On la lit donc par
+  // une référence, et l'effet ne dépend que de l'ouverture.
+  const close = useRef(onClose)
+  useLayoutEffect(() => {
+    close.current = onClose
+  })
+
   useEffect(() => {
     if (!open) return
     const previous = document.activeElement as HTMLElement | null
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') close.current()
       if (event.key === 'Tab' && panel.current) {
         const focusable = panel.current.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -65,7 +75,7 @@ export function Dialog({
       document.body.style.overflow = overflow
       previous?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open || typeof document === 'undefined') return null
 
