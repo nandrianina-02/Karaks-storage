@@ -63,5 +63,5 @@ export async function sendTestEvent(projectId: string, id: string, event: Webhoo
     createdAt: new Date().toISOString(),
     project: project.publicId,
     data: { test: true, id: 'file_exemple', name: 'exemple.mp3', size: 8452312, mimeType: 'audio/mpeg' },
-  })
+  }, 1, false)
 }

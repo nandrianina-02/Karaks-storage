@@ -70,9 +70,23 @@ async function deliverAll(projectId: string, event: WebhookEvent, data: Record<s
   )
 }
 
+/**
+ * Délais avant chaque nouvel essai d'un envoi en échec : un serveur
+ * momentanément en panne a le temps de revenir, sans être harcelé. Au-delà de
+ * la cinquième tentative, l'envoi est abandonné et reste visible dans
+ * l'historique.
+ */
+export const RETRY_DELAYS_MS = [60_000, 10 * 60_000, 60 * 60_000, 6 * 60 * 60_000]
+export const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1
+
+export type WebhookPayload = { id: string; event: string; createdAt: string; project: string; data: Record<string, unknown> }
+
 export async function deliver(
   hook: { id: string; url: string; secret: string },
-  payload: { id: string; event: string; createdAt: string; project: string; data: Record<string, unknown> },
+  payload: WebhookPayload,
+  attempt = 1,
+  /** Faux pour un envoi d'essai : on ne relance pas un essai. */
+  retry = true,
 ) {
   const body = JSON.stringify(payload)
   const timestamp = Math.floor(Date.now() / 1000)
@@ -113,6 +127,10 @@ export async function deliver(
       success: error === null,
       error,
       durationMs: Date.now() - started,
+      attempt,
+      // Même identifiant d'événement à chaque essai : le destinataire peut
+      // écarter un doublon s'il avait reçu l'envoi sans pouvoir répondre.
+      nextAttemptAt: retry && error !== null && attempt < MAX_ATTEMPTS ? new Date(Date.now() + RETRY_DELAYS_MS[attempt - 1]) : null,
     },
   })
   return { success: error === null, statusCode, error }
@@ -144,4 +162,29 @@ export function isAllowedWebhookUrl(raw: string, production = process.env.NODE_E
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false
   if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) return false
   return true
+}
+
+/**
+ * Relance les envois dont l'heure est venue. Chaque envoi est d'abord
+ * « réclamé » par une mise à jour conditionnelle : deux instances qui
+ * passeraient en même temps ne le renverraient pas deux fois.
+ */
+export async function retryDueDeliveries(limit = 20): Promise<number> {
+  const due = await prisma.webhookDelivery.findMany({
+    where: { success: false, nextAttemptAt: { lte: new Date() } },
+    include: { webhook: true },
+    orderBy: { nextAttemptAt: 'asc' },
+    take: limit,
+  })
+  let retried = 0
+  for (const delivery of due) {
+    const claimed = await prisma.webhookDelivery.updateMany({
+      where: { id: delivery.id, nextAttemptAt: { not: null } },
+      data: { nextAttemptAt: null },
+    })
+    if (claimed.count === 0 || !delivery.webhook.active) continue
+    await deliver(delivery.webhook, delivery.payload as unknown as WebhookPayload, delivery.attempt + 1)
+    retried += 1
+  }
+  return retried
 }

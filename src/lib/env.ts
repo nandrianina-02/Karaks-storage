@@ -31,6 +31,9 @@ const schema = z.object({
     .optional()
     .transform((value) => value === 'true' || value === '1'),
 
+  /** Secret des tâches planifiées : Vercel l'envoie en `Authorization`. */
+  CRON_SECRET: optional,
+
   SMTP_HOST: optional,
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: optional,

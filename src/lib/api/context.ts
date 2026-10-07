@@ -4,6 +4,7 @@ import type { Project, StorageProvider } from '@/generated/prisma/client'
 import { ApiError, toErrorResponse } from '@/lib/api/errors'
 import { auth } from '@/lib/auth'
 import { drainBackground, isServerless } from '@/lib/background'
+import { pumpRetries } from '@/lib/services/maintenance'
 import { appUrl, env } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
 import { actorFromRequest, type Actor } from '@/lib/services/audit'
@@ -201,6 +202,8 @@ export async function authenticate(request: Request, options: { rateLimit?: 'api
 export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => {
     if (isServerless) after(drainBackground)
+    // Relances de webhooks au fil des requêtes, une fois par minute au plus.
+    after(pumpRetries)
     try {
       return await fn(...args)
     } catch (error) {

@@ -22,6 +22,8 @@ export const GET = handle(async (request: Request, { params }: Params<{ id: stri
       statusCode: delivery.statusCode,
       error: delivery.error,
       durationMs: delivery.durationMs,
+      attempt: delivery.attempt,
+      nextAttemptAt: delivery.nextAttemptAt?.toISOString() ?? null,
       createdAt: delivery.createdAt.toISOString(),
     })),
   })

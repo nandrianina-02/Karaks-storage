@@ -178,6 +178,8 @@ model Project {
   /// Requêtes par minute et par clé ou par compte (CDS 25).
   rateLimitPerMinute Int  @default(100)
   signedUrlPerMinute Int  @default(30)
+  /// Jours passés à la corbeille avant suppression définitive automatique.
+  trashRetentionDays Int  @default(30)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -453,9 +455,14 @@ model WebhookDelivery {
   success    Boolean  @default(false)
   error      String?
   durationMs Int?
+  /// Tentative de 1 à 5. Un envoi en échec est réessayé à `nextAttemptAt`.
+  attempt       Int       @default(1)
+  nextAttemptAt DateTime?
   createdAt  DateTime @default(now())
 
   webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([nextAttemptAt])
 
   @@index([webhookId, createdAt])
   @@map("webhook_deliveries")
@@ -535,4 +542,18 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+/// Passage de la maintenance automatique : corbeille, envois abandonnés,
+/// relances de webhooks. Sert aussi à la supervision.
+model MaintenanceRun {
+  id         String    @id @default(cuid())
+  trigger    String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  report     Json?
+  error      String?
+
+  @@index([startedAt])
+  @@map("maintenance_runs")
 }

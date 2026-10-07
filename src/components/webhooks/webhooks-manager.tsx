@@ -22,6 +22,8 @@ interface Delivery {
   statusCode: number | null
   error: string | null
   durationMs: number | null
+  attempt: number
+  nextAttemptAt: string | null
   createdAt: string
 }
 
@@ -192,7 +194,11 @@ export function WebhooksManager({
               <li key={delivery.id} className="flex items-center gap-3 py-2.5 text-sm">
                 {delivery.success ? <CircleCheck className="h-4 w-4 text-success" /> : <CircleAlert className="h-4 w-4 text-danger" />}
                 <span className="font-mono text-[0.78rem] text-ink">{delivery.event}</span>
-                <span className="flex-1 truncate text-xs text-muted">{delivery.error ?? `Réponse ${delivery.statusCode}`}</span>
+                <span className="flex-1 truncate text-xs text-muted">
+                  {delivery.error ?? `Réponse ${delivery.statusCode}`}
+                  {delivery.attempt > 1 && ` · tentative ${delivery.attempt}`}
+                  {delivery.nextAttemptAt && ` · nouvel essai ${formatRelative(delivery.nextAttemptAt)}`}
+                </span>
                 <span className="text-xs text-ink-2 tabular-nums">{delivery.durationMs} ms</span>
                 <span className="text-xs whitespace-nowrap text-muted">{formatDate(delivery.createdAt)}</span>
               </li>

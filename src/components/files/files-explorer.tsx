@@ -75,6 +75,7 @@ export function FilesExplorer({
   initialSelected,
   stats,
   bottom,
+  trashRetentionDays,
 }: {
   project: string
   provider: ProviderInfo
@@ -89,6 +90,7 @@ export function FilesExplorer({
   initialSelected: FileDto | null
   stats: ReactNode
   bottom: ReactNode
+  trashRetentionDays: number
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -204,7 +206,7 @@ export function FilesExplorer({
             </h1>
             <p className="mt-1 text-sm text-ink-2">
               {query.trash
-                ? 'Fichiers retirés de la diffusion, restaurables jusqu’à leur suppression définitive.'
+                ? `Fichiers retirés de la diffusion, restaurables pendant ${trashRetentionDays} jours, puis supprimés définitivement.`
                 : 'Gérez vos fichiers et dossiers en toute simplicité.'}
             </p>
           </div>

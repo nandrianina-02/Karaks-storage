@@ -30,6 +30,7 @@ export const projectSettingsInput = projectInput.partial().extend({
   storageQuota: z.number().int().min(0).nullable().optional(),
   rateLimitPerMinute: z.number().int().min(10).max(10_000).optional(),
   signedUrlPerMinute: z.number().int().min(1).max(1_000).optional(),
+  trashRetentionDays: z.number().int().min(1).max(365).optional(),
 })
 
 export function slugify(input: string): string {
@@ -108,6 +109,7 @@ export async function updateProject(projectId: string, input: z.infer<typeof pro
         input.storageQuota === undefined ? undefined : input.storageQuota === null ? null : BigInt(input.storageQuota),
       rateLimitPerMinute: input.rateLimitPerMinute,
       signedUrlPerMinute: input.signedUrlPerMinute,
+      trashRetentionDays: input.trashRetentionDays,
     },
   })
   await audit(actor, { action: 'UPDATE_PROJECT', projectId, target: project.name, details: { fields: Object.keys(input) } })

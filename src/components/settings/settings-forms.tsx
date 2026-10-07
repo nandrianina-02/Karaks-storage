@@ -39,6 +39,7 @@ export function ProjectSettingsForm({
   const [quota, setQuota] = useState(project.storageQuota ? String(Math.round(project.storageQuota / (1024 * MB))) : '')
   const [rate, setRate] = useState(String(project.rateLimitPerMinute))
   const [linkRate, setLinkRate] = useState(String(project.signedUrlPerMinute))
+  const [retention, setRetention] = useState(String(project.trashRetentionDays))
   const [busy, setBusy] = useState(false)
 
   async function save(event: React.FormEvent) {
@@ -55,6 +56,7 @@ export function ProjectSettingsForm({
           storageQuota: quota ? Math.round(Number(quota) * 1024 * MB) : null,
           rateLimitPerMinute: Number(rate),
           signedUrlPerMinute: Number(linkRate),
+          trashRetentionDays: Number(retention),
         },
       })
       toast.success('Réglages enregistrés')
@@ -110,6 +112,13 @@ export function ProjectSettingsForm({
           </Field>
           <Field label="Liens temporaires créés par minute" htmlFor="s-links">
             <Input id="s-links" type="number" min={1} max={1000} value={linkRate} onChange={(event) => setLinkRate(event.target.value)} />
+          </Field>
+          <Field
+            label="Conservation de la corbeille (jours)"
+            htmlFor="s-retention"
+            hint="Au-delà, un fichier à la corbeille est supprimé définitivement, chez le fournisseur comme ici."
+          >
+            <Input id="s-retention" type="number" min={1} max={365} value={retention} onChange={(event) => setRetention(event.target.value)} />
           </Field>
         </fieldset>
       </Card>

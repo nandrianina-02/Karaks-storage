@@ -81,6 +81,7 @@ export default async function FilesPage({ searchParams }: { searchParams: Search
       limit={LIMIT}
       query={query}
       initialSelected={selectedRow ? fileDto(selectedRow) : null}
+      trashRetentionDays={project.trashRetentionDays}
       stats={<OverviewTiles overview={overview} />}
       bottom={
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
