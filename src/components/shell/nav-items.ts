@@ -1,4 +1,5 @@
 import {
+  Activity,
   ChartColumn,
   CirclePlay,
   CloudUpload,
@@ -22,6 +23,8 @@ export interface NavItem {
   label: string
   icon: LucideIcon
   permission?: Permission
+  /** Réservée au super administrateur. */
+  superAdmin?: boolean
   /** Préfixes qui gardent l'entrée active (pages de détail). */
   match?: string[]
 }
@@ -38,5 +41,12 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/statistiques', label: 'Analytics', icon: ChartColumn, permission: 'stats:read' },
   { href: '/projets', label: 'Projets', icon: Layers },
   { href: '/journal', label: 'Logs', icon: ScrollText, permission: 'logs:read' },
+  { href: '/supervision', label: 'Supervision', icon: Activity, superAdmin: true },
   { href: '/parametres', label: 'Paramètres', icon: Settings, match: ['/profil'] },
 ]
+
+/** Entrées visibles selon les permissions sur le projet et le rôle global. */
+export function visibleNav(permissions: Iterable<Permission>, superAdmin: boolean): NavItem[] {
+  const granted = new Set(permissions)
+  return NAV_ITEMS.filter((item) => (!item.permission || granted.has(item.permission)) && (!item.superAdmin || superAdmin))
+}

@@ -23,6 +23,7 @@ const PROTECTED = [
   '/journal',
   '/parametres',
   '/profil',
+  '/supervision',
 ]
 
 export function proxy(request: NextRequest) {

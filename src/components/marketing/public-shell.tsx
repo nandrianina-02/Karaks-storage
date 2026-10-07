@@ -59,6 +59,9 @@ export function PublicShell({ children, signedIn }: { children: React.ReactNode;
           <Link href="/api/v1/openapi.json" className="hover:text-ink">
             OpenAPI
           </Link>
+          <Link href="/statut" className="hover:text-ink">
+            Statut
+          </Link>
           <Link href="/confidentialite" className="hover:text-ink">
             Confidentialité
           </Link>

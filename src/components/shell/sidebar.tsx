@@ -7,7 +7,7 @@ import { useTransition } from 'react'
 
 import { selectProject } from '@/app/(app)/actions'
 import { Logo } from '@/components/brand/logo'
-import { NAV_ITEMS } from '@/components/shell/nav-items'
+import { visibleNav } from '@/components/shell/nav-items'
 import { Meter, meterTone } from '@/components/ui/surface'
 import { useToast } from '@/components/ui/toast'
 import { formatBytes } from '@/lib/files/types'
@@ -21,20 +21,19 @@ export interface ShellProject {
 
 export interface SidebarProps {
   permissions: Permission[]
+  superAdmin: boolean
   projects: ShellProject[]
   current: ShellProject | null
   storage: { used: number; limit: number | null } | null
   onNavigate?: () => void
 }
 
-export function Sidebar({ permissions, projects, current, storage, onNavigate }: SidebarProps) {
+export function Sidebar({ permissions, superAdmin, projects, current, storage, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const toast = useToast()
   const [pending, startTransition] = useTransition()
-  const granted = new Set(permissions)
-
-  const items = NAV_ITEMS.filter((item) => !item.permission || granted.has(item.permission))
+  const items = visibleNav(permissions, superAdmin)
   const percent = storage?.limit ? (storage.used / storage.limit) * 100 : 0
 
   function switchProject(id: string) {

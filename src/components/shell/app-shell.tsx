@@ -107,7 +107,7 @@ export function AppShell({
       </div>
 
       {palette && (
-        <CommandPalette onClose={() => setPalette(false)} project={sidebar.current?.id ?? null} permissions={sidebar.permissions} />
+        <CommandPalette onClose={() => setPalette(false)} project={sidebar.current?.id ?? null} permissions={sidebar.permissions} superAdmin={sidebar.superAdmin} />
       )}
       <UploadTray />
     </UploadProvider>

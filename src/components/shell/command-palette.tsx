@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { FileIcon } from '@/components/files/file-icon'
-import { NAV_ITEMS } from '@/components/shell/nav-items'
+import { NAV_ITEMS, visibleNav } from '@/components/shell/nav-items'
 import { api } from '@/lib/client/api'
 import type { FileCategory } from '@/lib/files/types'
 import { formatBytes } from '@/lib/files/types'
@@ -32,10 +32,12 @@ export function CommandPalette({
   onClose,
   project,
   permissions,
+  superAdmin,
 }: {
   onClose: () => void
   project: string | null
   permissions: Permission[]
+  superAdmin: boolean
 }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
@@ -45,12 +47,11 @@ export function CommandPalette({
   const input = useRef<HTMLInputElement>(null)
 
   const pages = useMemo<Result[]>(() => {
-    const granted = new Set(permissions)
     const needle = query.trim().toLowerCase()
-    return NAV_ITEMS.filter((item) => !item.permission || granted.has(item.permission))
+    return visibleNav(permissions, superAdmin)
       .filter((item) => !needle || item.label.toLowerCase().includes(needle))
       .map((item) => ({ key: item.href, label: item.label, hint: 'Page', href: item.href, kind: 'page' as const, icon: item.icon }))
-  }, [query, permissions])
+  }, [query, permissions, superAdmin])
 
   useEffect(() => {
     input.current?.focus()

@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       user={{ name: workspace.user.name, email: workspace.user.email }}
       role={role}
       permissions={[...workspace.permissions]}
+      superAdmin={workspace.user.role === 'SUPER_ADMIN'}
       projects={workspace.projects.map((item) => ({ id: item.id, name: item.name }))}
       current={project ? { id: project.publicId, name: project.name } : null}
       storage={
