@@ -163,9 +163,44 @@ while (cursor < big.length) {
 }
 check('l’envoi reprenable aboutit au fichier complet', resumable?.size === big.length, resumable?.id)
 
+// --- Envoi direct depuis un navigateur (adresse à jeton) ---
+const directData = melody(3, 7)
+const direct = await request('/api/v1/uploads', {
+  method: 'POST',
+  key: KEY,
+  body: { name: 'direct-e2e.wav', mimeType: 'audio/wav', size: directData.length, folderId: FOLDER },
+})
+const uploadUrl = new URL(direct.data.uploadUrl ?? `${BASE}/u/x?t=x`)
+check('l’ouverture d’envoi renvoie une adresse à jeton', /^\/u\/upl_[0-9A-Za-z]+$/.test(uploadUrl.pathname) && uploadUrl.searchParams.get('t')?.length === 32)
+const badToken = await request(`${uploadUrl.pathname}?t=${'x'.repeat(32)}`, { session: false })
+check('un jeton d’envoi faux ne mène à rien (404)', badToken.status === 404, String(badToken.status))
+const preflight = await fetch(`${BASE}${uploadUrl.pathname}${uploadUrl.search}`, {
+  method: 'OPTIONS',
+  headers: { Origin: ORIGIN_OK, 'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': 'content-range' },
+})
+check('le prévol CORS autorise PUT et Content-Range', /PUT/.test(preflight.headers.get('access-control-allow-methods') ?? '') && /Content-Range/i.test(preflight.headers.get('access-control-allow-headers') ?? ''))
+let directFile = null
+let directCors = null
+for (let start = 0; start < directData.length; ) {
+  const end = Math.min(start + 256 * 1024, directData.length) - 1
+  const part = await request(`${uploadUrl.pathname}${uploadUrl.search}`, {
+    method: 'PUT',
+    session: false,
+    headers: { 'Content-Range': `bytes ${start}-${end}/${directData.length}`, Origin: ORIGIN_OK },
+    body: directData.subarray(start, end + 1),
+  })
+  directCors ??= part.headers.get('access-control-allow-origin')
+  start = part.data.upload?.received ?? directData.length
+  directFile = part.data.file ?? directFile
+}
+check('le navigateur envoie le fichier sans clé, par morceaux', directFile?.size === directData.length, directFile?.id)
+check('l’origine déclarée reçoit l’autorisation CORS à l’envoi', directCors === ORIGIN_OK, directCors)
+const replayDirect = await request(`${uploadUrl.pathname}${uploadUrl.search}`, { session: false })
+check('l’adresse d’envoi indique le fichier terminé', replayDirect.data.file?.id === directFile?.id)
+
 // --- Liste, recherche, confidentialité ---
 const files = await request(`/api/v1/files?folderId=${FOLDER}`, { key: KEY })
-check('un client API récupère la liste des fichiers', files.status === 200 && files.data.files.length === 2, `${files.data.files?.length} fichiers`)
+check('un client API récupère la liste des fichiers', files.status === 200 && files.data.files.length === 3, `${files.data.files?.length} fichiers`)
 const search = await request('/api/v1/files?search=REPRISE', { key: KEY })
 check('la recherche ignore la casse', search.data.files.some((file) => file.id === resumable?.id))
 const raw = JSON.stringify([simple.data, files.data, search.data])
@@ -314,7 +349,7 @@ check(
 )
 
 // --- Ménage ---
-for (const id of [FILE, resumable?.id, tinyFile.data.file?.id].filter(Boolean)) {
+for (const id of [FILE, resumable?.id, tinyFile.data.file?.id, directFile?.id].filter(Boolean)) {
   await request(`/api/v1/files/${id}/permanent`, { method: 'DELETE', project: P })
 }
 await request(`/api/v1/folders/${FOLDER}`, { method: 'DELETE', project: P })

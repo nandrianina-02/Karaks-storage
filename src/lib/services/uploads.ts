@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { UploadSession } from '@/generated/prisma/client'
 import type { ProjectWithProvider } from '@/lib/api/context'
 import { ApiError } from '@/lib/api/errors'
+import { appUrl, env } from '@/lib/env'
 import { checkFileType, sanitizeFileName } from '@/lib/files/types'
 import { newPublicId } from '@/lib/ids'
 import { prisma } from '@/lib/prisma'
@@ -10,6 +11,7 @@ import type { Actor } from '@/lib/services/audit'
 import { afterUpload, assertCanStore, storageNameFor, waveformInput } from '@/lib/services/files'
 import { findFolder } from '@/lib/services/folders'
 import { forgetQuota, withProvider } from '@/lib/storage'
+import { hashSecret, randomBase62, safeEqual } from '@/lib/security/crypto'
 import { CHUNK_GRANULARITY, type ResumableState } from '@/lib/storage/provider'
 
 /**
@@ -51,6 +53,8 @@ export async function createUpload(
   const folder = input.folderId ? await findFolder(project.id, input.folderId) : null
   const filePublicId = newPublicId('file')
 
+  // Jeton de l'adresse d'envoi direct : seule son empreinte est conservée.
+  const token = randomBase62(32)
   const providerSession = await withProvider(project.provider, (storage) =>
     storage.startResumable({
       name: storageNameFor(filePublicId, type.extension),
@@ -60,7 +64,7 @@ export async function createUpload(
     }),
   )
 
-  return prisma.uploadSession.create({
+  const session = await prisma.uploadSession.create({
     data: {
       publicId: newPublicId('upload'),
       filePublicId,
@@ -76,9 +80,27 @@ export async function createUpload(
       height: input.height ?? null,
       waveform: input.waveform ?? [],
       providerSession,
+      uploadTokenHash: hashSecret(token, env.API_SECRET),
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
     },
   })
+  return { session, uploadUrl: `${appUrl}/u/${session.publicId}?t=${token}` }
+}
+
+/**
+ * Session désignée par une adresse d'envoi direct. Le jeton tient lieu de
+ * clé, pour cette session seulement : il ne permet ni de lire ni d'envoyer
+ * autre chose. Un jeton inconnu et une session inconnue répondent pareil.
+ */
+export async function findUploadByToken(publicId: string, token: string) {
+  const session = await prisma.uploadSession.findUnique({
+    where: { publicId },
+    include: { project: { include: { provider: true } } },
+  })
+  const valid =
+    session?.uploadTokenHash && /^[0-9A-Za-z]{16,64}$/.test(token) && safeEqual(session.uploadTokenHash, hashSecret(token, env.API_SECRET))
+  if (!session || !valid) throw new ApiError('not_found', 'Adresse d’envoi inconnue ou expirée.')
+  return session
 }
 
 export async function findUpload(projectId: string, publicId: string) {

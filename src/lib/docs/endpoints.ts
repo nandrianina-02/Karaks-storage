@@ -157,7 +157,8 @@ export const SECTIONS: Section[] = [
         method: 'POST',
         path: '/api/v1/uploads',
         title: 'Ouvrir un envoi reprenable',
-        description: 'Renvoie l’identifiant de session et la taille des morceaux. Les morceaux, sauf le dernier, doivent être des multiples de chunkGranularity.',
+        description:
+          'Renvoie l’identifiant de session, la taille des morceaux et uploadUrl. Les morceaux, sauf le dernier, doivent être des multiples de chunkGranularity. uploadUrl est une adresse à jeton propre à la session : le serveur de votre application la remet au navigateur, qui y envoie les morceaux (PUT avec Content-Range) sans détenir de clé API. Les origines autorisées du projet s’appliquent (CORS).',
         permission: 'files:upload',
         body: { type: 'json', example: { name: 'song.mp3', mimeType: 'audio/mpeg', size: 52428800, folderId: 'fld_Pq8sYw2mNc4r', durationSeconds: 232 } },
         response: {
@@ -165,6 +166,7 @@ export const SECTIONS: Section[] = [
           example: {
             success: true,
             upload: { id: 'upl_Hs7dK2pQm9xA', fileId: 'file_92kdLq0aZt7x', name: 'song.mp3', size: 52428800, received: 0, status: 'pending', expiresAt: '2026-10-12T10:00:00.000Z' },
+            uploadUrl: 'https://storage.karaks.com/u/upl_Hs7dK2pQm9xA?t=…',
             chunkSize: 4194304,
             chunkGranularity: 262144,
           },

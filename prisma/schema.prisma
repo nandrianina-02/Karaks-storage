@@ -336,6 +336,9 @@ model UploadSession {
   /// Adresse de session reprenable chez le fournisseur. Elle vaut un droit
   /// d'écriture : elle ne quitte jamais le serveur.
   providerSession String?
+  /// Empreinte du jeton de l'adresse d'envoi direct `/u/<id>?t=<jeton>`,
+  /// remise au navigateur pour qu'il envoie sans détenir de clé API.
+  uploadTokenHash String?
   status          UploadStatus @default(PENDING)
   fileId          String?
 
