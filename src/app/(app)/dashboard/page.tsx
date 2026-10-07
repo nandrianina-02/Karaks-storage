@@ -1,4 +1,4 @@
-import { CirclePlay, CloudUpload, Download, FolderPlus, KeyRound, Layers, Link2, Plus, TriangleAlert } from 'lucide-react'
+import { CirclePlay, CloudUpload, Download, FolderPlus, KeyRound, Layers, Link2, Plus, ShieldCheck, TriangleAlert } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
@@ -14,6 +14,7 @@ import { categoryOf, formatBytes } from '@/lib/files/types'
 import { chartSeries, param, periodOf, type SearchParams } from '@/lib/pages'
 import { listLogs } from '@/lib/services/logs'
 import { projectOverview, topFiles } from '@/lib/services/stats'
+import { prisma } from '@/lib/prisma'
 import { formatCount, formatDate } from '@/lib/utils'
 import { getWorkspace } from '@/lib/workspace'
 
@@ -60,6 +61,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     topFiles(project.id, 5),
   ])
   const provider = overview.provider
+  const admin = workspace.user.role === 'SUPER_ADMIN' || workspace.user.role === 'ADMIN'
+  const secured = admin
+    ? (await prisma.user.findUnique({ where: { id: workspace.user.id }, select: { twoFactorEnabled: true } }))?.twoFactorEnabled
+    : true
   const providerPercent = provider.limit ? ((provider.usage ?? 0) / provider.limit) * 100 : null
 
   return (
@@ -78,6 +83,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           </>
         }
       />
+
+      {!secured && (
+        <Link
+          href="/profil"
+          className="animate-rise flex items-center gap-3 rounded-xl border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-ink transition-colors hover:border-warning"
+        >
+          <ShieldCheck className="h-5 w-5 shrink-0 text-warning" />
+          <span className="flex-1">
+            <strong className="font-medium">Protégez votre compte administrateur.</strong> Activez la double authentification : un mot de passe volé ne
+            suffira plus à ouvrir le service.
+          </span>
+          <span className="text-xs text-ink-2">Profil</span>
+        </Link>
+      )}
 
       <OverviewTiles overview={overview} />
 

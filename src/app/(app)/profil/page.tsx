@@ -19,7 +19,7 @@ export default async function ProfilePage() {
     <div className="space-y-6">
       <PageHeader title="Profil" description="Votre identité et la sécurité de votre compte." />
       <ProfileForms
-        user={{ name: user.name, email: user.email, role: user.role, createdAt: user.createdAt.toISOString() }}
+        user={{ name: user.name, email: user.email, role: user.role, createdAt: user.createdAt.toISOString(), twoFactorEnabled: user.twoFactorEnabled }}
         hasPassword={Boolean(credential?.password)}
         sessions={sessions}
       />

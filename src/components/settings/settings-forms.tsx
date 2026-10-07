@@ -428,6 +428,7 @@ export interface UserRow {
   email: string
   role: string
   status: string
+  twoFactorEnabled: boolean
   projects: number
   createdAt: string
 }
@@ -476,7 +477,10 @@ export function UsersAdmin({ users, me, isSuperAdmin }: { users: UserRow[]; me: 
                 <tr key={user.id} className="border-b border-line last:border-b-0">
                   <td className="py-2.5 pl-5">
                     <p className="text-ink">{user.name}</p>
-                    <p className="text-xs text-muted">{user.email}</p>
+                    <p className="text-xs text-muted">
+                      {user.email}
+                      {user.twoFactorEnabled && <span className="ml-2 text-success">double authentification</span>}
+                    </p>
                   </td>
                   <td className="py-2.5">
                     {locked ? (

@@ -121,6 +121,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           email: user.email,
           role: user.role,
           status: user.status,
+          twoFactorEnabled: user.twoFactorEnabled,
           projects: user._count.memberships,
           createdAt: user.createdAt.toISOString(),
         }))}

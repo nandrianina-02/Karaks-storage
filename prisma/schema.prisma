@@ -45,12 +45,15 @@ model User {
 
   /// Les notifications sont les événements du journal postérieurs à cette date.
   notificationsSeenAt DateTime?
+  /// Double authentification par application (CDS 17).
+  twoFactorEnabled    Boolean   @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   sessions    Session[]
   accounts    Account[]
+  twoFactors  TwoFactor[]
   memberships ProjectMember[]
   projects    Project[]       @relation("ProjectOwner")
   files       File[]
@@ -96,6 +99,23 @@ model Account {
 
   @@index([userId])
   @@map("accounts")
+}
+
+/// Secret TOTP et codes de secours, gérés par Better Auth (chiffrés par lui).
+model TwoFactor {
+  id                      String    @id @default(cuid())
+  userId                  String
+  secret                  String
+  backupCodes             String
+  verified                Boolean   @default(true)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([secret])
+  @@map("two_factors")
 }
 
 model Verification {

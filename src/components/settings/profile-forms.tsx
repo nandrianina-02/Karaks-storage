@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/field'
 import { Badge, Card, CardHeader } from '@/components/ui/surface'
 import { useToast } from '@/components/ui/toast'
+import { TwoFactorCard } from '@/components/settings/two-factor-card'
 import { authClient } from '@/lib/auth-client'
 import { formatDate, initials } from '@/lib/utils'
 
@@ -24,7 +25,7 @@ export function ProfileForms({
   hasPassword,
   sessions,
 }: {
-  user: { name: string; email: string; role: string; createdAt: string }
+  user: { name: string; email: string; role: string; createdAt: string; twoFactorEnabled: boolean }
   hasPassword: boolean
   sessions: number
 }) {
@@ -105,6 +106,8 @@ export function ProfileForms({
             </form>
           </Card>
         )}
+
+        <TwoFactorCard enabled={user.twoFactorEnabled} hasPassword={hasPassword} admin={user.role === 'SUPER_ADMIN' || user.role === 'ADMIN'} />
       </div>
 
       <div className="space-y-5">

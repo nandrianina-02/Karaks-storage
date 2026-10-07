@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { createAuthMiddleware, isAPIError } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
+import { twoFactor } from 'better-auth/plugins'
 
 import { sendEmail } from '@/lib/email'
 import { appUrl, env, isGoogleConfigured } from '@/lib/env'
@@ -89,17 +90,33 @@ export const auth = betterAuth({
   hooks: {
     // Connexions réussies et échouées au journal (CDS 23).
     after: createAuthMiddleware(async (ctx) => {
-      if (ctx.path !== '/sign-in/email' && !ctx.path.startsWith('/callback/')) return
+      // La connexion n'est acquise qu'après le code, quand la double
+      // authentification est active : c'est alors la vérification du code
+      // qui ouvre la session, et qui est journalisée.
+      const watched = ['/sign-in/email', '/two-factor/verify-totp', '/two-factor/verify-backup-code']
+      if (!watched.includes(ctx.path) && !ctx.path.startsWith('/callback/')) return
       const request = ctx.request
       const actor = {
         ip: request?.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null,
         userAgent: request?.headers.get('user-agent') ?? null,
       }
       const session = ctx.context.newSession
+      // Mot de passe vérifié mais code encore attendu : ce n'est pas une
+      // connexion. Notre crochet passe avant celui du module de double
+      // authentification, qui n'a pas encore remplacé la réponse : seul l'état
+      // du compte permet de le savoir (un appareil de confiance n'a pas cette
+      // étape, mais sa connexion n'en reste pas moins réelle).
+      if (session && ctx.path === '/sign-in/email' && (session.user as { twoFactorEnabled?: boolean }).twoFactorEnabled) {
+        const trusted = await ctx.getSignedCookie(ctx.context.createAuthCookie('trust_device').name, ctx.context.secret)
+        if (!trusted) return
+      }
       if (session) {
         await audit({ ...actor, userId: session.user.id }, {
           action: 'LOGIN',
-          details: { method: ctx.path === '/sign-in/email' ? 'email' : 'google' },
+          details: {
+            method: ctx.path.startsWith('/callback/') ? 'google' : 'email',
+            twoFactor: ctx.path.startsWith('/two-factor/'),
+          },
         })
       } else if (isAPIError(ctx.context.returned)) {
         const email = typeof ctx.body?.email === 'string' ? ctx.body.email.toLowerCase() : null
@@ -110,7 +127,12 @@ export const auth = betterAuth({
 
   onAPIError: { errorURL: '/connexion' },
 
-  plugins: [nextCookies()],
+  plugins: [
+    // Double authentification par application (CDS 17) : code à six chiffres,
+    // codes de secours, appareil de confiance trente jours.
+    twoFactor({ issuer: 'Karaks Storage' }),
+    nextCookies(),
+  ],
 })
 
 export type AuthSession = typeof auth.$Infer.Session

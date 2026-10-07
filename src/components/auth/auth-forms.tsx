@@ -1,12 +1,12 @@
 'use client'
 
-import { ArrowRight, Eye, EyeOff, LogIn, Mail, UserPlus } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, KeyRound, LogIn, Mail, ShieldCheck, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Field, Input } from '@/components/ui/field'
+import { Checkbox, Field, Input } from '@/components/ui/field'
 import { authClient } from '@/lib/auth-client'
 
 /** Libellés français des erreurs de la bibliothèque d'authentification. */
@@ -21,6 +21,13 @@ function message(code: string | undefined, fallback: string) {
       return 'Mot de passe trop court : 10 caractères au moins.'
     case 'INVALID_TOKEN':
       return 'Ce lien n’est plus valable. Demandez-en un nouveau.'
+    case 'INVALID_CODE':
+    case 'INVALID_TWO_FACTOR_CODE':
+    case 'INVALID_BACKUP_CODE':
+      return 'Code incorrect. Vérifiez l’heure de votre téléphone, ou utilisez un code de secours.'
+    case 'TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE':
+    case 'ACCOUNT_LOCKED':
+      return 'Trop d’essais. Patientez quelques minutes avant de réessayer.'
     default:
       return fallback
   }
@@ -104,20 +111,33 @@ export function SignInForm({ google }: { google: boolean }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(params.get('erreur') ? 'La connexion avec Google n’a pas abouti.' : null)
   const [busy, setBusy] = useState(false)
+  const [secondStep, setSecondStep] = useState(false)
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
-    const { error: failure } = await authClient.signIn.email({ email, password })
+    const { data, error: failure } = await authClient.signIn.email({ email, password })
     if (failure) {
       setError(failure.status === 429 ? 'Trop de tentatives. Patientez une minute.' : message(failure.code, 'Connexion impossible.'))
       setBusy(false)
       return
     }
+    // Double authentification : le mot de passe est bon, la session n'est
+    // ouverte qu'après le code.
+    if (data && 'twoFactorRedirect' in data && data.twoFactorRedirect) {
+      setBusy(false)
+      setSecondStep(true)
+      return
+    }
     router.push(safeRedirect(params.get('redirect')))
     router.refresh()
   }
+
+  if (secondStep) return <TwoFactorStep onDone={() => {
+    router.push(safeRedirect(params.get('redirect')))
+    router.refresh()
+  }} />
 
   return (
     <div className="animate-rise">
@@ -313,6 +333,84 @@ export function ResetPasswordForm() {
           Enregistrer
         </Button>
       </form>
+    </div>
+  )
+}
+
+/** Deuxième étape de connexion : code de l'application, ou code de secours. */
+function TwoFactorStep({ onDone }: { onDone: () => void }) {
+  const [backup, setBackup] = useState(false)
+  const [code, setCode] = useState('')
+  const [trust, setTrust] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    const { error: failure } = backup
+      ? await authClient.twoFactor.verifyBackupCode({ code: code.trim(), trustDevice: trust })
+      : await authClient.twoFactor.verifyTotp({ code: code.replace(/\s/g, ''), trustDevice: trust })
+    if (failure) {
+      setError(failure.status === 429 ? 'Trop d’essais. Patientez une minute.' : message(failure.code, 'Code refusé.'))
+      setBusy(false)
+      return
+    }
+    onDone()
+  }
+
+  return (
+    <div className="animate-rise">
+      <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent">
+        <ShieldCheck className="h-5 w-5" />
+      </span>
+      <h1 className="mt-4 font-display text-[1.7rem] font-semibold text-ink">Double authentification</h1>
+      <p className="mt-1.5 text-sm text-ink-2">
+        {backup
+          ? 'Saisissez l’un de vos codes de secours. Chaque code ne sert qu’une fois.'
+          : 'Saisissez le code à six chiffres affiché par votre application d’authentification.'}
+      </p>
+      <form onSubmit={submit} className="mt-7 space-y-4">
+        <Field label={backup ? 'Code de secours' : 'Code'} htmlFor="code">
+          <Input
+            id="code"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            inputMode={backup ? 'text' : 'numeric'}
+            autoComplete="one-time-code"
+            pattern={backup ? undefined : '[0-9 ]{6,7}'}
+            maxLength={backup ? 32 : 7}
+            required
+            autoFocus
+            className="text-center font-mono text-lg tracking-[0.3em]"
+          />
+        </Field>
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-ink-2">
+          <Checkbox checked={trust} onChange={(event) => setTrust(event.target.checked)} />
+          Faire confiance à cet appareil pendant 30 jours
+        </label>
+        {error && (
+          <p role="alert" className="animate-fade rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        )}
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy} icon={<ShieldCheck className="h-[18px] w-[18px]" />}>
+          Vérifier
+        </Button>
+      </form>
+      <button
+        type="button"
+        onClick={() => {
+          setBackup((value) => !value)
+          setCode('')
+          setError(null)
+        }}
+        className="mt-5 flex items-center gap-1.5 text-sm text-accent hover:underline"
+      >
+        <KeyRound className="h-4 w-4" />
+        {backup ? 'Utiliser l’application d’authentification' : 'Utiliser un code de secours'}
+      </button>
     </div>
   )
 }
