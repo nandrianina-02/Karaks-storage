@@ -133,6 +133,14 @@ export async function deliver(
       nextAttemptAt: retry && error !== null && attempt < MAX_ATTEMPTS ? new Date(Date.now() + RETRY_DELAYS_MS[attempt - 1]) : null,
     },
   })
+  if (retry && error !== null && attempt >= MAX_ATTEMPTS) {
+    const failure = error
+    const hookRow = await prisma.webhook.findUnique({ where: { id: hook.id }, select: { id: true, url: true, projectId: true } })
+    if (hookRow) {
+      const { alertWebhookAbandoned } = await import('@/lib/services/alerts')
+      await alertWebhookAbandoned(hookRow, payload.event, failure).catch(() => undefined)
+    }
+  }
   return { success: error === null, statusCode, error }
 }
 

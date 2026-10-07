@@ -8,6 +8,7 @@ import { parseRange } from '@/lib/files/range'
 import { checkFileType, formatBytes, sanitizeFileName, type FileCategory } from '@/lib/files/types'
 import { newPublicId } from '@/lib/ids'
 import { prisma } from '@/lib/prisma'
+import { checkProjectQuotaSoon } from '@/lib/services/alerts'
 import { audit, type Actor } from '@/lib/services/audit'
 import { findFolder } from '@/lib/services/folders'
 import { recordUsage } from '@/lib/services/usage'
@@ -218,6 +219,7 @@ export async function uploadFile(
 /** Effets communs à tout téléversement abouti, simple ou reprenable. */
 export async function afterUpload(projectId: string, actor: Actor, file: File) {
   recordUsage(projectId, { uploads: 1, bytesIn: Number(file.size) })
+  checkProjectQuotaSoon(projectId)
   await audit(actor, {
     action: 'UPLOAD',
     projectId,

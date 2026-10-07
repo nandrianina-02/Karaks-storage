@@ -1,3 +1,4 @@
+import { checkEmail } from '@/lib/email'
 import { env } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
 import { rateLimitBackend } from '@/lib/security/rate-limit'
@@ -120,7 +121,7 @@ export function overallLevel(checks: { level: Level }[]): Level {
 
 /** Vue complète, pour la page de supervision. */
 export async function supervision() {
-  const [database, providers, maintenance, webhooks, runs, failures, uploads] = await Promise.all([
+  const [database, providers, maintenance, webhooks, runs, failures, uploads, mail] = await Promise.all([
     checkDatabase(),
     checkProviders(),
     checkMaintenance(),
@@ -133,6 +134,7 @@ export async function supervision() {
       include: { webhook: { select: { url: true, project: { select: { name: true } } } } },
     }),
     prisma.uploadSession.groupBy({ by: ['status'], _count: { _all: true } }),
+    checkEmail(),
   ])
   const checks: ComponentCheck[] = [database, ...providers, maintenance, webhooks]
   return {
@@ -145,7 +147,7 @@ export async function supervision() {
     config: {
       rateLimit: rateLimitBackend(),
       cron: Boolean(env.CRON_SECRET),
-      mail: Boolean(env.SMTP_HOST),
+      mail,
       region: process.env.VERCEL_REGION ?? null,
     },
     checkedAt: new Date(),

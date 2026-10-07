@@ -2,6 +2,7 @@ import type { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { Actor } from '@/lib/services/audit'
 import { deleteFilePermanently } from '@/lib/services/files'
+import { alertMaintenanceErrors, checkProjectQuota, checkProviderSpace } from '@/lib/services/alerts'
 import { advanceMigrations } from '@/lib/services/storage-migration'
 import { abortUpload } from '@/lib/services/uploads'
 import { retryDueDeliveries } from '@/lib/services/webhooks'
@@ -103,14 +104,29 @@ export async function runMaintenance(trigger: 'cron' | 'manuel', budgetMs = 45_0
     // --- Changements de stockage en cours ---
     if (!over()) report.migrationsAdvanced = await advanceMigrations(budgetMs - (Date.now() - started))
 
+    // --- Alertes d'espace : quotas des projets, comptes de stockage ---
+    if (!over()) {
+      try {
+        for (const project of await prisma.project.findMany({ where: { storageQuota: { not: null } }, select: { id: true } })) {
+          await checkProjectQuota(project.id)
+        }
+        await checkProviderSpace()
+      } catch (error) {
+        report.errors.push(`Alertes d’espace : ${error instanceof Error ? error.message : 'échec'}`)
+      }
+    }
+
     report.incomplete = over()
     await prisma.maintenanceRun.update({
       where: { id: run.id },
       data: { finishedAt: new Date(), report: report as unknown as Prisma.InputJsonValue },
     })
+    // Un passage manuel ne prévient pas : celui qui l'a lancé voit le résultat.
+    if (trigger === 'cron') await alertMaintenanceErrors(report.errors).catch(() => undefined)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Échec de la maintenance'
     await prisma.maintenanceRun.update({ where: { id: run.id }, data: { finishedAt: new Date(), error: message } })
+    if (trigger === 'cron') await alertMaintenanceErrors([message]).catch(() => undefined)
     throw error
   }
   return report

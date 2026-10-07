@@ -199,7 +199,9 @@ export function SignUpForm({ google }: { google: boolean }) {
     event.preventDefault()
     setBusy(true)
     setError(null)
-    const { error: failure } = await authClient.signUp.email({ name, email, password })
+    // Le lien de confirmation ramène là où l'inscription a commencé
+    // (une invitation, par exemple).
+    const { error: failure } = await authClient.signUp.email({ name, email, password, callbackURL: safeRedirect(redirect) })
     if (failure) {
       setError(failure.status === 429 ? 'Trop de tentatives. Patientez quelques minutes.' : message(failure.code, 'Inscription impossible.'))
       setBusy(false)

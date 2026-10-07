@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { StatTile } from '@/components/dashboard/stat-tile'
 import { LevelBadge, OVERALL } from '@/components/supervision/level'
 import { RunMaintenanceButton } from '@/components/supervision/run-maintenance'
+import { TestEmailButton } from '@/components/supervision/test-email'
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from '@/components/ui/surface'
 import { supervision } from '@/lib/services/health'
 import { formatCount, formatRelative } from '@/lib/utils'
@@ -164,9 +165,20 @@ export default async function SupervisionPage() {
             <dl className="space-y-3 px-5 pb-5 text-[0.84rem]">
               <ConfigRow icon={Gauge} label="Limitation de débit" value={state.config.rateLimit === 'redis' ? 'Partagée (Redis)' : 'Par instance (mémoire)'} good={state.config.rateLimit === 'redis'} />
               <ConfigRow icon={Timer} label="Tâche planifiée" value={state.config.cron ? 'Secret configuré' : 'CRON_SECRET absent'} good={state.config.cron} />
-              <ConfigRow icon={Mail} label="Envoi de courriels" value={state.config.mail ? 'SMTP configuré' : 'Non configuré'} good={state.config.mail} />
+              <ConfigRow
+                icon={Mail}
+                label="Envoi de courriels"
+                value={!state.config.mail.configured ? 'Non configuré' : state.config.mail.ok ? 'SMTP joignable' : 'SMTP en erreur'}
+                good={state.config.mail.ok}
+              />
               <ConfigRow icon={MapPin} label="Région d’exécution" value={state.config.region ?? 'Locale'} good />
             </dl>
+            <div className="space-y-2 border-t border-line px-5 py-4">
+              <p className="truncate text-xs text-ink-2" title={state.config.mail.detail}>
+                {state.config.mail.detail}
+              </p>
+              <TestEmailButton disabled={!state.config.mail.ok} />
+            </div>
           </Card>
         </div>
       </div>

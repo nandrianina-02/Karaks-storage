@@ -47,6 +47,9 @@ model User {
   notificationsSeenAt DateTime?
   /// Double authentification par application (CDS 17).
   twoFactorEnabled    Boolean   @default(false)
+  /// Catégories d'emails refusées (« projects », « operations »). Les emails
+  /// de sécurité ne se refusent pas.
+  emailOptOut String[] @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -662,4 +665,15 @@ model ProviderMigration {
 
   @@index([status])
   @@map("provider_migrations")
+}
+
+/// Alertes d'exploitation déjà envoyées : évite de prévenir chaque nuit d'un
+/// même quota dépassé. Une ligne disparaît quand la situation revient à la
+/// normale, ce qui réarme l'alerte.
+model AlertState {
+  key    String   @id
+  level  Int      @default(0)
+  sentAt DateTime @default(now())
+
+  @@map("alert_states")
 }

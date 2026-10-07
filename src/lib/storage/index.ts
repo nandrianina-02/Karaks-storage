@@ -81,6 +81,9 @@ export async function withProvider<T>(
         .update({ where: { id: row.id }, data: { status: 'ERROR', lastError: error.message } })
         .catch(() => undefined)
       instances.delete(row.id)
+      // Import différé : le module d'alertes dépend lui-même de ce registre.
+      const message = error.message
+      void import('@/lib/services/alerts').then(({ alertProviderError }) => alertProviderError(row, message)).catch(() => undefined)
     }
     throw error
   }

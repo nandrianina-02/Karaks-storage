@@ -2,11 +2,13 @@ import { z } from 'zod'
 
 import { ApiError } from '@/lib/api/errors'
 import { sendEmail } from '@/lib/email'
-import { env } from '@/lib/env'
+import { renderEmail } from '@/lib/mail/template'
+import { env, isEmailEnabled } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
 import { hashSecret, randomBase62 } from '@/lib/security/crypto'
 import type { GlobalRoleName } from '@/lib/security/permissions'
 import { audit, type Actor } from '@/lib/services/audit'
+import { dashboardUrl, notifyUser } from '@/lib/services/email-notifications'
 
 /**
  * Membres d'un projet (CDS V2 : gestion avancée des membres).
@@ -62,6 +64,31 @@ export async function addOrInviteMember(project: ProjectRef, input: z.infer<type
       target: user.email,
       details: { role: input.role, previous: existing?.role ?? null },
     })
+    if (user.id !== inviter.id && existing?.role !== input.role) {
+      notifyUser(user.id, 'projects', (recipient) =>
+        existing
+          ? {
+              subject: `Votre rôle sur ${project.name} a changé`,
+              preheader: `Nouveau rôle : ${ROLE_LABELS[input.role]}`,
+              title: `Nouveau rôle sur ${project.name}`,
+              paragraphs: [
+                `Bonjour ${recipient.name.split(' ')[0]},`,
+                `${inviter.name} a changé votre rôle sur le projet ${project.name} : ${ROLE_LABELS[existing.role]} devient ${ROLE_LABELS[input.role]}.`,
+              ],
+              action: { label: 'Ouvrir le projet', url: dashboardUrl('/dashboard') },
+            }
+          : {
+              subject: `Vous avez accès au projet ${project.name}`,
+              preheader: `${inviter.name} vous a ajouté, rôle ${ROLE_LABELS[input.role]}.`,
+              title: `Bienvenue sur ${project.name}`,
+              paragraphs: [
+                `Bonjour ${recipient.name.split(' ')[0]},`,
+                `${inviter.name} vous a ajouté au projet ${project.name}, avec le rôle ${ROLE_LABELS[input.role]}. Il apparaît maintenant dans votre sélecteur de projets.`,
+              ],
+              action: { label: 'Ouvrir le tableau de bord', url: dashboardUrl('/dashboard') },
+            },
+      )
+    }
     // Une invitation restée en attente pour cette adresse n'a plus d'objet.
     await prisma.projectInvitation.deleteMany({ where: { projectId: project.id, email: input.email, acceptedAt: null } })
     return { kind: 'member' as const, member }
@@ -76,16 +103,24 @@ export async function addOrInviteMember(project: ProjectRef, input: z.infer<type
     update: { role: input.role, tokenHash: tokenHash(token), invitedById: inviter.id, expiresAt, acceptedAt: null, createdAt: new Date() },
   })
   const url = invitationUrl(token)
-  const mail = await sendEmail({
-    to: input.email,
-    subject: `${inviter.name} vous invite sur le projet ${project.name}`,
-    text:
-      `Bonjour,\n\n` +
-      `${inviter.name} vous invite à rejoindre le projet « ${project.name} » sur Karaks Storage, ` +
-      `avec le rôle ${ROLE_LABELS[input.role]}.\n\n` +
-      `Pour accepter, ouvrez ce lien dans les ${INVITATION_DAYS} jours, puis créez votre compte avec cette adresse :\n${url}\n\n` +
-      `Si vous ne connaissez pas cette personne, ignorez ce message.\n`,
+  const { html, text } = renderEmail({
+    preheader: `Rôle proposé : ${ROLE_LABELS[input.role]}. Lien valable ${INVITATION_DAYS} jours.`,
+    title: `Rejoindre ${project.name}`,
+    paragraphs: [
+      'Bonjour,',
+      `${inviter.name} vous invite à rejoindre le projet ${project.name} sur Karaks Storage, avec le rôle ${ROLE_LABELS[input.role]}.`,
+      `Ouvrez le lien dans les ${INVITATION_DAYS} jours, puis créez votre compte avec cette adresse : l’invitation ne fonctionne qu’avec elle.`,
+    ],
+    action: { label: 'Voir l’invitation', url },
+    details: [
+      ['Projet', project.name],
+      ['Rôle', ROLE_LABELS[input.role]],
+      ['Invité par', inviter.name],
+    ],
+    note: 'Vous ne connaissez pas cette personne ? Ignorez ce message : sans votre accord, aucun compte n’est créé.',
+    footer: { reason: `Vous recevez cet email parce que ${inviter.name} a saisi cette adresse dans Karaks Storage.` },
   })
+  const mail = await sendEmail({ to: input.email, subject: `${inviter.name} vous invite sur le projet ${project.name}`, html, text })
   await audit(actor, { action: 'INVITE_MEMBER', projectId: project.id, target: input.email, details: { role: input.role, emailSent: mail.sent } })
   return { kind: 'invitation' as const, invitation, url, sent: mail.sent }
 }
@@ -120,6 +155,13 @@ export async function findInvitation(token: string) {
 }
 
 export async function acceptInvitation(token: string, user: { id: string; email: string }, actor: Actor) {
+  // L'adresse doit être prouvée : sans cela, s'inscrire avec l'adresse d'un
+  // autre suffirait à récupérer une invitation transférée par erreur. Sans
+  // serveur d'email, aucune preuve n'est possible : l'exigence est levée.
+  const account = await prisma.user.findUnique({ where: { id: user.id }, select: { emailVerified: true } })
+  if (isEmailEnabled && !account?.emailVerified) {
+    throw new ApiError('forbidden', 'Confirmez d’abord votre adresse email : le lien vous a été envoyé à l’inscription.', { reason: 'email_not_verified' })
+  }
   const invitation = await findInvitation(token)
   if (!invitation) throw new ApiError('not_found', 'Ce lien d’invitation n’est pas valide.')
   if (invitation.state === 'accepted') throw new ApiError('gone', 'Cette invitation a déjà été acceptée.')
@@ -154,6 +196,18 @@ export async function removeMember(projectId: string, userId: string, actor: Act
   if (member.role === 'OWNER') throw new ApiError('conflict', 'Le propriétaire ne peut pas être retiré : transférez d’abord la propriété.')
   await prisma.projectMember.delete({ where: { id: member.id } })
   await audit(actor, { action: 'REMOVE_MEMBER', projectId, target: member.user.email, details: { role: member.role } })
+  if (actor.userId !== userId) {
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } })
+    notifyUser(userId, 'projects', (recipient) => ({
+      subject: `Accès retiré : ${project?.name ?? 'projet'}`,
+      preheader: 'Vous n’êtes plus membre de ce projet.',
+      title: `Vous n’avez plus accès à ${project?.name ?? 'ce projet'}`,
+      paragraphs: [
+        `Bonjour ${recipient.name.split(' ')[0]},`,
+        'Un administrateur vous a retiré de ce projet. Ses fichiers, clés et statistiques ne vous sont plus accessibles ; votre compte et vos autres projets ne changent pas.',
+      ],
+    }))
+  }
 }
 
 /** Transférer la propriété : le propriétaire lui-même, ou le super administrateur. */
@@ -183,4 +237,15 @@ export async function transferOwnership(projectId: string, toUserId: string, act
     return owners.map((owner) => owner.userId)
   })
   await audit(actor, { action: 'TRANSFER_OWNERSHIP', projectId, target: target.user.email, details: { previousOwners: previous } })
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } })
+  notifyUser(toUserId, 'projects', (recipient) => ({
+    subject: `Vous êtes propriétaire de ${project?.name ?? 'un projet'}`,
+    preheader: 'La propriété du projet vous a été confiée.',
+    title: `${project?.name ?? 'Le projet'} vous est confié`,
+    paragraphs: [
+      `Bonjour ${recipient.name.split(' ')[0]},`,
+      'Vous êtes désormais propriétaire de ce projet : vous pouvez en gérer les membres, le supprimer ou en transférer à votre tour la propriété. L’ancien propriétaire reste membre, en administration.',
+    ],
+    action: { label: 'Ouvrir le projet', url: dashboardUrl('/parametres?onglet=membres') },
+  }))
 }

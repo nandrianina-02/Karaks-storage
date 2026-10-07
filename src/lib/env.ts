@@ -47,6 +47,8 @@ const schema = z.object({
     .optional()
     .transform((value) => value === 'true' || value === '1'),
   MAIL_FROM: z.string().default('Karaks Storage <ne-pas-repondre@karaks.local>'),
+  /** Fuseau des dates écrites dans les emails. */
+  APP_TIMEZONE: z.string().default('Indian/Antananarivo'),
 })
 
 function load() {

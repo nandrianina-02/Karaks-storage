@@ -3,7 +3,10 @@ import type { Metadata } from 'next'
 
 import { PublicShell } from '@/components/marketing/public-shell'
 import { AcceptInvitationButton } from '@/components/members/accept-invitation'
+import { ResendVerificationButton } from '@/components/settings/email-preferences'
 import { LinkButton } from '@/components/ui/button'
+import { isEmailEnabled } from '@/lib/env'
+import { prisma } from '@/lib/prisma'
 import { findInvitation, ROLE_LABELS } from '@/lib/services/members'
 import { formatDate } from '@/lib/utils'
 import { getSessionUser } from '@/lib/workspace'
@@ -46,6 +49,8 @@ export default async function InvitationPage({ params }: { params: Promise<{ tok
     )
   } else {
     const mismatch = user && user.email.toLowerCase() !== invitation.email
+    const unverified =
+      user && !mismatch && isEmailEnabled && !(await prisma.user.findUnique({ where: { id: user.id }, select: { emailVerified: true } }))?.emailVerified
     body = (
       <>
         <p className="text-xs font-medium tracking-[0.25em] text-accent uppercase">Invitation</p>
@@ -75,6 +80,14 @@ export default async function InvitationPage({ params }: { params: Promise<{ tok
               Vous êtes connecté en tant que {user.email}. Cette invitation est adressée à {invitation.email} : déconnectez-vous, puis ouvrez de
               nouveau ce lien.
             </p>
+          ) : unverified ? (
+            <div className="space-y-3 rounded-lg border border-line bg-surface-2 px-4 py-3.5 text-sm text-ink-2">
+              <p>
+                Confirmez d’abord votre adresse : ouvrez le lien de l’email de bienvenue envoyé à {user.email}. Vous reviendrez ici pour accepter
+                l’invitation.
+              </p>
+              <ResendVerificationButton email={user.email} callbackURL={here} />
+            </div>
           ) : (
             <AcceptInvitationButton token={token} />
           )}

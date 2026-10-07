@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/field'
 import { Badge, Card, CardHeader } from '@/components/ui/surface'
 import { useToast } from '@/components/ui/toast'
+import { EmailPreferencesCard, ResendVerificationButton } from '@/components/settings/email-preferences'
 import { TwoFactorCard } from '@/components/settings/two-factor-card'
 import { authClient } from '@/lib/auth-client'
 import { formatDate, initials } from '@/lib/utils'
@@ -25,7 +26,7 @@ export function ProfileForms({
   hasPassword,
   sessions,
 }: {
-  user: { name: string; email: string; role: string; createdAt: string; twoFactorEnabled: boolean }
+  user: { name: string; email: string; role: string; createdAt: string; twoFactorEnabled: boolean; emailVerified: boolean; emailOptOut: string[] }
   hasPassword: boolean
   sessions: number
 }) {
@@ -77,7 +78,20 @@ export function ProfileForms({
             <Field label="Nom affiché" htmlFor="p-name">
               <Input id="p-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
             </Field>
-            <Field label="Adresse email" htmlFor="p-email" hint="Elle sert d’identifiant de connexion.">
+            <Field
+              label="Adresse email"
+              htmlFor="p-email"
+              hint={
+                user.emailVerified ? (
+                  'Confirmée. Elle sert d’identifiant de connexion et reçoit les alertes de sécurité.'
+                ) : (
+                  <span className="flex flex-wrap items-center gap-2 text-warning">
+                    Adresse pas encore confirmée.
+                    <ResendVerificationButton email={user.email} callbackURL="/profil" />
+                  </span>
+                )
+              }
+            >
               <Input id="p-email" value={user.email} readOnly className="text-ink-2" />
             </Field>
             <div className="sm:col-span-2">
@@ -108,6 +122,7 @@ export function ProfileForms({
         )}
 
         <TwoFactorCard enabled={user.twoFactorEnabled} hasPassword={hasPassword} admin={user.role === 'SUPER_ADMIN' || user.role === 'ADMIN'} />
+        <EmailPreferencesCard optOut={user.emailOptOut} admin={user.role === 'SUPER_ADMIN' || user.role === 'ADMIN'} />
       </div>
 
       <div className="space-y-5">

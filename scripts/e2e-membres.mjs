@@ -89,7 +89,14 @@ check('un compte d’une autre adresse est refusé', stolen.status === 403, Stri
 const invited = client()
 await invited('/api/v1/auth/sign-up/email', 'POST', { name: 'Essai invité', email: invitedEmail, password: 'essai-membres-2026' })
 created.push(invitedEmail)
-const accepted = await invited(`/api/v1/invitations/${token}/accept`, 'POST')
+let accepted = await invited(`/api/v1/invitations/${token}/accept`, 'POST')
+// Avec un serveur d'email, l'adresse doit d'abord être confirmée : on le
+// vérifie, puis on simule le clic sur le lien de confirmation.
+if (accepted.status === 403) {
+  check('une adresse non confirmée ne peut pas accepter', accepted.data.error?.details?.reason === 'email_not_verified', accepted.data.error?.message)
+  await db.query('UPDATE users SET "emailVerified" = true WHERE email = $1', [invitedEmail])
+  accepted = await invited(`/api/v1/invitations/${token}/accept`, 'POST')
+}
 check('le compte invité rejoint le projet', accepted.status === 200 && accepted.data.project?.id === project.id, String(accepted.status))
 const members = (await admin(`${base}/members`)).data
 const joined = members.members.find((member) => member.email === invitedEmail)
