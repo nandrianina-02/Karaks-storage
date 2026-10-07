@@ -138,6 +138,8 @@ model Verification {
 enum ProviderKind {
   GOOGLE_DRIVE
   LOCAL
+  /// Compatible S3 : Cloudflare R2, AWS S3, Backblaze B2, Scaleway…
+  S3
 }
 
 enum ProviderStatus {
@@ -164,11 +166,18 @@ model StorageProvider {
 
   lastError   String?
   connectedAt DateTime?
+  /// Réglages propres au type : point d'accès, région et compartiment pour
+  /// S3, diffusion directe. Jamais de secret ici (voir `credentials`).
+  config      Json?
+  /// Fournisseur attribué aux nouveaux projets.
+  isDefault   Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   projects Project[]
   files    File[]
+  migrationsFrom ProviderMigration[] @relation("MigrationSource")
+  migrationsTo   ProviderMigration[] @relation("MigrationTarget")
 
   @@map("storage_providers")
 }
@@ -219,6 +228,7 @@ model Project {
   provider StorageProvider @relation(fields: [providerId], references: [id])
   members  ProjectMember[]
   invitations ProjectInvitation[]
+  migrations  ProviderMigration[]
   folders  Folder[]
   files    File[]
   apiKeys  ApiKey[]
@@ -569,6 +579,7 @@ enum AuditAction {
   REMOVE_MEMBER
   INVITE_MEMBER
   TRANSFER_OWNERSHIP
+  MIGRATE_STORAGE
 }
 
 enum AuditResult {
@@ -612,4 +623,43 @@ model MaintenanceRun {
 
   @@index([startedAt])
   @@map("maintenance_runs")
+}
+
+enum MigrationStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// Déplacement des fichiers d'un projet d'un fournisseur à un autre. Il
+/// avance par tranches (une fonction serverless vit une minute) : la
+/// position dans le fichier en cours est gardée pour reprendre au milieu.
+model ProviderMigration {
+  id             String          @id @default(cuid())
+  projectId      String
+  fromProviderId String
+  toProviderId   String
+  status         MigrationStatus @default(RUNNING)
+  totalFiles     Int
+  movedFiles     Int             @default(0)
+  totalBytes     BigInt
+  movedBytes     BigInt          @default(0)
+  /// Fichier en cours de copie, et session d'envoi chez la destination.
+  currentFileId  String?
+  currentSession String?
+  currentOffset  BigInt          @default(0)
+  /// Dossiers du projet chez la source, supprimés une fois le projet vidé.
+  sourceFolders  String[]        @default([])
+  error          String?
+  startedById    String?
+  startedAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  finishedAt     DateTime?
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  from    StorageProvider @relation("MigrationSource", fields: [fromProviderId], references: [id])
+  to      StorageProvider @relation("MigrationTarget", fields: [toProviderId], references: [id])
+
+  @@index([status])
+  @@map("provider_migrations")
 }

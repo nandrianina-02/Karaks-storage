@@ -248,7 +248,7 @@ export const SECTIONS: Section[] = [
         path: '/api/v1/files/{id}/signed-url',
         title: 'Créer un lien',
         description:
-          'type : stream ou download. expiresIn : de 30 secondes à 7 jours. maxUses : facultatif ; une utilisation est comptée à l’ouverture, les requêtes de plage de la même lecture ne la recomptent pas.',
+          'type : stream ou download. expiresIn : de 30 secondes à 7 jours. maxUses : facultatif ; une utilisation est comptée à l’ouverture, les requêtes de plage de la même lecture ne la recomptent pas. Sur un stockage S3 en diffusion directe, le lien répond 302 vers une adresse signée du fournisseur : un lecteur suit la redirection de lui-même.',
         permission: 'links:create',
         params: [{ name: 'id', in: 'path', description: 'Identifiant du fichier.', required: true }],
         body: { type: 'json', example: { type: 'stream', expiresIn: 600, maxUses: 1 } },
@@ -350,6 +350,34 @@ export const SECTIONS: Section[] = [
         permission: 'webhooks:manage',
         body: { type: 'json', example: { url: 'https://api.karaks.com/webhooks/storage', events: ['file.uploaded', 'file.deleted'] } },
         response: { status: 201, example: { success: true, webhook: { id: 'cm1y…', active: true }, secret: 'whsec_…' } },
+      },
+    ],
+  },
+  {
+    id: 'statut',
+    title: 'État du service',
+    intro:
+      'Sans authentification. Une application cliente peut l’interroger pour expliquer une panne à ses utilisateurs plutôt que d’afficher une erreur générique. La même information est publiée sur la page /statut.',
+    endpoints: [
+      {
+        id: 'status',
+        method: 'GET',
+        path: '/api/v1/status',
+        title: 'Lire l’état du service',
+        description: 'status : ok, degraded ou down, pour l’ensemble et par fonction. Réponse 503 si une fonction est interrompue. Soixante appels par minute et par adresse.',
+        response: {
+          status: 200,
+          example: {
+            success: true,
+            status: 'ok',
+            components: [
+              { id: 'api', label: 'API et tableau de bord', level: 'ok' },
+              { id: 'storage', label: 'Stockage et diffusion des fichiers', level: 'ok' },
+              { id: 'links', label: 'Liens temporaires', level: 'ok' },
+            ],
+            checkedAt: '2026-10-07T12:00:00.000Z',
+          },
+        },
       },
     ],
   },

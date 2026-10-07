@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
 import { ProviderMark } from '@/components/files/file-panel'
+import { StorageAdmin, type AdminMigration, type AdminProject, type AdminProvider } from '@/components/settings/storage-admin'
 import { setTheme } from '@/components/theme/theme-toggle'
 import { Button, buttonClass } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -282,7 +283,7 @@ export function DeleteProjectCard({ project, stats }: { project: ProjectDto; sta
 
 export interface ProviderRow {
   id: string
-  kind: 'GOOGLE_DRIVE' | 'LOCAL'
+  kind: 'GOOGLE_DRIVE' | 'LOCAL' | 'S3'
   name: string
   status: 'CONNECTED' | 'DISCONNECTED' | 'ERROR'
   account: string | null
@@ -298,11 +299,14 @@ export function StorageSettings({
   googleConfigured,
   isSuperAdmin,
   notice,
+  admin,
 }: {
   providers: ProviderRow[]
   googleConfigured: boolean
   isSuperAdmin: boolean
   notice: { ok: boolean; message: string } | null
+  /** Stockages S3 et changements de stockage : super administrateur seulement. */
+  admin: { providers: AdminProvider[]; projects: AdminProject[]; migrations: AdminMigration[] } | null
 }) {
   const drive = providers.find((provider) => provider.kind === 'GOOGLE_DRIVE')
   return (
@@ -348,6 +352,10 @@ export function StorageSettings({
 
           {isSuperAdmin ? (
             googleConfigured ? (
+              // Redirection OAuth vers Google : il faut une vraie navigation, que
+              // <Link> remplacerait par un chargement côté client. La règle prend
+              // cette route d'API pour une page depuis l'ajout de /storage/[id].
+              // eslint-disable-next-line @next/next/no-html-link-for-pages
               <a href="/api/v1/storage/google/connect" className={buttonClass(drive?.status === 'CONNECTED' ? 'secondary' : 'primary', 'md')}>
                 <Unplug className="h-4 w-4" />
                 {drive?.status === 'CONNECTED' ? 'Reconnecter Google Drive' : 'Connecter Google Drive'}
@@ -375,6 +383,8 @@ export function StorageSettings({
             </p>
           </Card>
         ))}
+
+      {admin && <StorageAdmin {...admin} />}
     </div>
   )
 }

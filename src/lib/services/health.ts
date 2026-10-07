@@ -1,7 +1,7 @@
 import { env } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
 import { rateLimitBackend } from '@/lib/security/rate-limit'
-import { providerQuota } from '@/lib/storage'
+import { providerLabel, providerQuota } from '@/lib/storage'
 import { MAX_ATTEMPTS } from '@/lib/services/webhooks'
 
 /**
@@ -46,7 +46,7 @@ export async function checkProviders(): Promise<ComponentCheck[]> {
   const providers = await prisma.storageProvider.findMany({ where: { projects: { some: {} } }, orderBy: { createdAt: 'asc' } })
   return Promise.all(
     providers.map(async (provider): Promise<ComponentCheck> => {
-      const base = { id: `provider:${provider.id}`, label: provider.kind === 'GOOGLE_DRIVE' ? 'Stockage Google Drive' : `Stockage ${provider.name}` }
+      const base = { id: `provider:${provider.id}`, label: `Stockage ${providerLabel(provider)}` }
       if (provider.status !== 'CONNECTED') {
         return { ...base, level: 'down', detail: provider.lastError ?? 'Fournisseur déconnecté : à relier depuis les paramètres.' }
       }

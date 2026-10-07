@@ -150,7 +150,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 <ProviderMark kind={provider.kind} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-ink">
-                    {provider.kind === 'GOOGLE_DRIVE' ? 'Google Drive' : 'Disque local (développement)'}
+                    {provider.label}
                   </p>
                   <p className="truncate text-xs text-muted">{provider.account ?? 'Compte non renseigné'}</p>
                 </div>

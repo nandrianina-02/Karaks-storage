@@ -2,6 +2,7 @@ import type { ProviderInfo } from '@/components/files/file-panel'
 import type { ProjectWithProvider } from '@/lib/api/context'
 import { dailySeries } from '@/lib/services/stats'
 import { formatDay } from '@/lib/utils'
+import { providerLabel } from '@/lib/storage'
 
 /** Utilitaires partagés par les pages du tableau de bord. */
 
@@ -25,7 +26,7 @@ export function periodOf(value: string | undefined, fallback = 7): number {
 export function providerInfo(project: ProjectWithProvider): ProviderInfo {
   return {
     kind: project.provider.kind,
-    label: project.provider.kind === 'GOOGLE_DRIVE' ? 'Google Drive' : 'Disque local (développement)',
+    label: providerLabel(project.provider),
   }
 }
 

@@ -1,7 +1,7 @@
 import type { ProjectWithProvider } from '@/lib/api/context'
 import { prisma } from '@/lib/prisma'
 import { flushUsage } from '@/lib/services/usage'
-import { providerQuota } from '@/lib/storage'
+import { providerLabel, providerQuota } from '@/lib/storage'
 
 /**
  * Statistiques d'un projet (CDS 6.1, 22).
@@ -82,6 +82,7 @@ export async function projectOverview(project: ProjectWithProvider) {
     storage: { used: storage.bytes, limit, files: storage.files, trashed: storage.trashed },
     provider: {
       kind: project.provider.kind,
+      label: providerLabel(project.provider),
       status: project.provider.status,
       account: project.provider.accountEmail,
       usage: quota?.usage ?? null,

@@ -17,7 +17,7 @@ import { param, type SearchParams } from '@/lib/pages'
 import { prisma } from '@/lib/prisma'
 import { canTransferOwnership, listInvitations } from '@/lib/services/members'
 import { canDeleteProject } from '@/lib/services/projects'
-import { providerQuota } from '@/lib/storage'
+import { providerLabel, providerQuota, s3Config } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import { getWorkspace } from '@/lib/workspace'
 
@@ -110,11 +110,53 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       })),
     )
     const drive = param(params, 'drive')
+    const admin = isSuperAdmin
+      ? await (async () => {
+          const [projects, migrations, usage] = await Promise.all([
+            prisma.project.findMany({ select: { publicId: true, name: true, providerId: true }, orderBy: { name: 'asc' } }),
+            prisma.providerMigration.findMany({
+              orderBy: { startedAt: 'desc' },
+              take: 8,
+              include: { project: { select: { name: true } }, from: true, to: true },
+            }),
+            prisma.file.groupBy({ by: ['providerId'], _sum: { size: true } }),
+          ])
+          return {
+            providers: providers.map((provider) => ({
+              id: provider.id,
+              kind: provider.kind,
+              label: providerLabel(provider),
+              status: provider.status,
+              account: provider.accountEmail,
+              isDefault: provider.isDefault,
+              redirect: s3Config(provider)?.redirect ?? null,
+              projects: provider._count.projects,
+              files: provider._count.files,
+              usage: Number(usage.find((row) => row.providerId === provider.id)?._sum.size ?? 0),
+            })),
+            projects: projects.map((project) => ({ id: project.publicId, name: project.name, providerId: project.providerId })),
+            migrations: migrations.map((migration) => ({
+              id: migration.id,
+              project: migration.project.name,
+              from: providerLabel(migration.from),
+              to: providerLabel(migration.to),
+              status: migration.status,
+              totalFiles: migration.totalFiles,
+              movedFiles: migration.movedFiles,
+              totalBytes: Number(migration.totalBytes),
+              movedBytes: Number(migration.movedBytes),
+              error: migration.error,
+              startedAt: migration.startedAt.toISOString(),
+            })),
+          }
+        })()
+      : null
     content = (
       <StorageSettings
         providers={rows}
         googleConfigured={isGoogleConfigured}
         isSuperAdmin={isSuperAdmin}
+        admin={admin}
         notice={
           drive === 'connecte'
             ? { ok: true, message: 'Google Drive est relié. Les nouveaux projets y seront stockés.' }

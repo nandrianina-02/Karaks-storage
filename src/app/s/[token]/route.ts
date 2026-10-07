@@ -71,6 +71,10 @@ async function serve(request: Request, { params }: Context) {
       },
       corsOrigin: allowedOrigin(request, link.project.allowedOrigins),
       embeddable: true,
+      // L'adresse signée vit au moins quinze minutes, le temps d'écouter un
+      // titre en entier : un lecteur continue d'y lire par plages après la
+      // redirection, sans repasser par ici.
+      redirectFor: Math.min(3600, Math.max(900, Math.round((link.expiresAt.getTime() - Date.now()) / 1000))),
     })
   } catch (error) {
     return toErrorResponse(error)

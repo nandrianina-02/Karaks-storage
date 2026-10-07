@@ -2,6 +2,7 @@ import type { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { Actor } from '@/lib/services/audit'
 import { deleteFilePermanently } from '@/lib/services/files'
+import { advanceMigrations } from '@/lib/services/storage-migration'
 import { abortUpload } from '@/lib/services/uploads'
 import { retryDueDeliveries } from '@/lib/services/webhooks'
 
@@ -13,7 +14,9 @@ import { retryDueDeliveries } from '@/lib/services/webhooks'
  * - envois abandonnés : une session reprenable expirée est fermée chez le
  *   fournisseur, qui sinon garderait les octets reçus ;
  * - webhooks : les envois en échec sont relancés à l'heure prévue ;
- * - historique des webhooks : les envois de plus de trente jours sont retirés.
+ * - historique des webhooks : les envois de plus de trente jours sont retirés ;
+ * - changements de stockage : les migrations en cours avancent avec le temps
+ *   qui reste.
  *
  * Chaque passage est borné dans le temps : une fonction Vercel ne vit pas plus
  * de soixante secondes, et ce qui n'est pas fait le sera au passage suivant.
@@ -26,6 +29,7 @@ export interface MaintenanceReport {
   uploadsAborted: number
   webhooksRetried: number
   deliveriesPruned: number
+  migrationsAdvanced: number
   incomplete: boolean
   errors: string[]
 }
@@ -39,6 +43,7 @@ export async function runMaintenance(trigger: 'cron' | 'manuel', budgetMs = 45_0
     uploadsAborted: 0,
     webhooksRetried: 0,
     deliveriesPruned: 0,
+    migrationsAdvanced: 0,
     incomplete: false,
     errors: [],
   }
@@ -94,6 +99,9 @@ export async function runMaintenance(trigger: 'cron' | 'manuel', budgetMs = 45_0
       })
       report.deliveriesPruned = pruned.count
     }
+
+    // --- Changements de stockage en cours ---
+    if (!over()) report.migrationsAdvanced = await advanceMigrations(budgetMs - (Date.now() - started))
 
     report.incomplete = over()
     await prisma.maintenanceRun.update({

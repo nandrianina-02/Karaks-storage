@@ -5,6 +5,7 @@ import { decrypt } from '@/lib/security/crypto'
 import { GoogleDriveProvider } from '@/lib/storage/google-drive'
 import { LocalProvider } from '@/lib/storage/local'
 import { ProviderError, type StorageProvider } from '@/lib/storage/provider'
+import { S3Provider } from '@/lib/storage/s3'
 
 /**
  * Registre des fournisseurs : fait le lien entre une ligne de la base et une
@@ -29,7 +30,18 @@ export function providerFor(row: ProviderRow): StorageProvider {
   if (cached && cached.version === version) return cached.provider
 
   let provider: StorageProvider
-  if (row.kind === 'LOCAL') {
+  if (row.kind === 'S3') {
+    const config = s3Config(row)
+    if (!config || !row.credentials) throw new StorageUnavailableError('Le stockage S3 n’est pas configuré.')
+    const keys = JSON.parse(decrypt(row.credentials, env.ENCRYPTION_KEY)) as { accessKeyId: string; secretAccessKey: string }
+    provider = new S3Provider({
+      ...config,
+      ...keys,
+      // S3 ne tient pas de compte de l'espace occupé : on le lit en base.
+      usage: async () =>
+        Number((await prisma.file.aggregate({ where: { providerId: row.id }, _sum: { size: true } }))._sum.size ?? 0),
+    })
+  } else if (row.kind === 'LOCAL') {
     if (process.env.NODE_ENV === 'production' && !env.STORAGE_ALLOW_LOCAL) {
       throw new StorageUnavailableError('Le stockage sur disque est désactivé en production.')
     }
@@ -79,6 +91,10 @@ export async function withProvider<T>(
  * sinon le disque local, admis seulement hors production.
  */
 export async function defaultProvider(): Promise<ProviderRow> {
+  // Choix explicite du super administrateur, s'il est relié.
+  const chosen = await prisma.storageProvider.findFirst({ where: { isDefault: true, status: 'CONNECTED' } })
+  if (chosen) return chosen.kind === 'GOOGLE_DRIVE' ? ensureDriveLayout(chosen) : chosen
+
   const drive = await prisma.storageProvider.findFirst({
     where: { kind: 'GOOGLE_DRIVE', status: 'CONNECTED' },
     orderBy: { connectedAt: 'desc' },
@@ -156,4 +172,42 @@ export async function providerQuota(row: ProviderRow) {
 
 export function forgetQuota(rowId: string) {
   quotaCache.delete(rowId)
+}
+
+/** Réglages d'un fournisseur S3, lus dans la colonne `config`. */
+export interface S3Config {
+  endpoint: string
+  region: string
+  bucket: string
+  /** Liens temporaires servis par redirection vers une adresse signée du fournisseur. */
+  redirect: boolean
+}
+
+export function s3Config(row: Pick<ProviderRow, 'kind' | 'config'>): S3Config | null {
+  if (row.kind !== 'S3' || !row.config || typeof row.config !== 'object') return null
+  const config = row.config as Record<string, unknown>
+  if (typeof config.endpoint !== 'string' || typeof config.bucket !== 'string') return null
+  return {
+    endpoint: config.endpoint,
+    region: typeof config.region === 'string' && config.region ? config.region : 'auto',
+    bucket: config.bucket,
+    redirect: config.redirect === true,
+  }
+}
+
+/** Nom affiché d'un fournisseur. */
+export function providerLabel(row: Pick<ProviderRow, 'kind' | 'name'>): string {
+  if (row.kind === 'GOOGLE_DRIVE') return 'Google Drive'
+  if (row.kind === 'LOCAL') return 'Disque local (développement)'
+  return row.name
+}
+
+/**
+ * Fournisseur qui détient un fichier. C'est d'ordinaire celui du projet,
+ * mais pendant une migration (CDS V3) un projet a des fichiers des deux
+ * côtés : chaque lecture doit aller chercher le fichier là où il est.
+ */
+export async function fileProvider(project: { provider: ProviderRow }, file: { providerId: string }): Promise<ProviderRow> {
+  if (file.providerId === project.provider.id) return project.provider
+  return prisma.storageProvider.findUniqueOrThrow({ where: { id: file.providerId } })
 }

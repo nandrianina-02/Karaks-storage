@@ -12,7 +12,8 @@ import { audit, type Actor } from '@/lib/services/audit'
 import { findFolder } from '@/lib/services/folders'
 import { recordUsage } from '@/lib/services/usage'
 import { emit } from '@/lib/services/webhooks'
-import { forgetQuota, providerQuota, withProvider } from '@/lib/storage'
+import { fileProvider, forgetQuota, providerQuota, s3Config, withProvider } from '@/lib/storage'
+import type { S3Provider } from '@/lib/storage/s3'
 
 /**
  * Fichiers (CDS 9, 11, 13, 14, 20, 21).
@@ -264,7 +265,9 @@ export async function updateFile(
 
   if (input.folderId !== undefined) {
     const target = input.folderId ? await findFolder(project.id, input.folderId) : null
-    if ((target?.id ?? null) !== file.folderId && file.providerFileId) {
+    // Les dossiers sont ceux du fournisseur du projet : un fichier encore
+    // chez l'ancien fournisseur, pendant une migration, n'y est pas déplacé.
+    if ((target?.id ?? null) !== file.folderId && file.providerFileId && file.providerId === project.providerId) {
       const previous = file.folderId ? await prisma.folder.findUnique({ where: { id: file.folderId } }) : null
       await withProvider(project.provider, (storage) =>
         storage.update(file.providerFileId!, {
@@ -303,7 +306,7 @@ export async function updateFile(
 export async function trashFile(project: ProjectWithProvider, publicId: string, actor: Actor) {
   const file = await findFile(project.id, publicId)
   const trashFolder = project.provider.trashFolderId
-  if (file.providerFileId && trashFolder) {
+  if (file.providerFileId && trashFolder && file.providerId === project.providerId) {
     const previous = file.folderId ? await prisma.folder.findUnique({ where: { id: file.folderId } }) : null
     await withProvider(project.provider, (storage) =>
       storage.update(file.providerFileId!, {
@@ -329,7 +332,7 @@ export async function restoreFile(project: ProjectWithProvider, publicId: string
   })
   if (!file) throw new ApiError('not_found', 'Fichier introuvable dans la corbeille.')
 
-  if (file.providerFileId && project.provider.trashFolderId) {
+  if (file.providerFileId && project.provider.trashFolderId && file.providerId === project.providerId) {
     await withProvider(project.provider, (storage) =>
       storage.update(file.providerFileId!, {
         parentId: file.folder?.providerFolderId ?? project.providerFolderId ?? undefined,
@@ -353,10 +356,11 @@ export async function restoreFile(project: ProjectWithProvider, publicId: string
  */
 export async function deleteFilePermanently(project: ProjectWithProvider, publicId: string, actor: Actor) {
   const file = await findFile(project.id, publicId, { includeTrashed: true })
+  const holder = await fileProvider(project, file)
   if (file.providerFileId) {
-    await withProvider(project.provider, (storage) => storage.delete(file.providerFileId!))
+    await withProvider(holder, (storage) => storage.delete(file.providerFileId!))
   }
-  forgetQuota(project.provider.id)
+  forgetQuota(holder.id)
   await prisma.file.delete({ where: { id: file.id } })
   await audit(actor, {
     action: 'DELETE_PERMANENT',
@@ -384,6 +388,12 @@ export interface ServeOptions {
   embeddable?: boolean
   /** Appelé au début d'une nouvelle lecture, pas à chaque plage. */
   onOpen?: () => Promise<void> | void
+  /**
+   * Diffusion directe (CDS V3) : si le fournisseur du fichier l'accepte, la
+   * réponse redirige vers une adresse signée valable ce nombre de secondes,
+   * et les octets ne passent plus par le serveur.
+   */
+  redirectFor?: number
 }
 
 function contentDisposition(kind: 'inline' | 'attachment', name: string) {
@@ -441,31 +451,55 @@ export async function serveFile(
   if (request.method === 'HEAD') return new Response(null, { status, headers })
   if (!file.providerFileId) throw new ApiError('not_found', 'Fichier absent du stockage.')
 
-  const source = await withProvider(project.provider, (storage) =>
+  const holder = await fileProvider(project, file)
+  if (options.redirectFor && s3Config(holder)?.redirect) {
+    const location = await withProvider(holder, (storage) =>
+      (storage as S3Provider).presignedUrl(file.providerFileId!, {
+        expiresIn: options.redirectFor!,
+        fileName: file.originalName,
+        contentType: file.mimeType,
+        disposition: options.disposition,
+      }),
+    )
+    await recordOpen(project, file, options)
+    // Le lecteur lira tout le fichier chez le fournisseur : c'est la meilleure
+    // estimation de la bande passante, qui ne passe plus par ici.
+    recordUsage(project.id, { bytesOut: size })
+    const redirect = new Headers({ Location: location, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' })
+    for (const name of ['Cross-Origin-Resource-Policy', 'Access-Control-Allow-Origin', 'Vary']) {
+      const value = headers.get(name)
+      if (value) redirect.set(name, value)
+    }
+    return new Response(null, { status: 302, headers: redirect })
+  }
+
+  const source = await withProvider(holder, (storage) =>
     storage.createReadStream(file.providerFileId!, range.kind === 'partial' ? { start, end } : undefined),
   )
 
-  if (start === 0) {
-    const isDownload = options.disposition === 'attachment'
-    await prisma.file.update({
-      where: { id: file.id },
-      data: {
-        lastAccessAt: new Date(),
-        ...(isDownload ? { downloadCount: { increment: 1 } } : { streamCount: { increment: 1 } }),
-      },
-    })
-    recordUsage(project.id, isDownload ? { downloads: 1 } : { streams: 1 })
-    await audit(options.actor, {
-      action: isDownload ? 'DOWNLOAD' : 'STREAM',
-      projectId: project.id,
-      fileId: file.publicId,
-      target: file.originalName,
-    })
-    emit(project.id, isDownload ? 'file.downloaded' : 'file.streamed', { id: file.publicId, name: file.originalName })
-    await options.onOpen?.()
-  }
+  if (start === 0) await recordOpen(project, file, options)
 
   return new Response(countBytes(source, (bytes) => recordUsage(project.id, { bytesOut: bytes })), { status, headers })
+}
+
+/** Une nouvelle lecture ou un téléchargement : compteurs, journal, webhook. */
+async function recordOpen(project: ProjectWithProvider, file: File, options: ServeOptions) {
+  const isDownload = options.disposition === 'attachment'
+  await prisma.file.update({
+    where: { id: file.id },
+    data: {
+      lastAccessAt: new Date(),
+      ...(isDownload ? { downloadCount: { increment: 1 } } : { streamCount: { increment: 1 } }),
+    },
+  })
+  recordUsage(project.id, isDownload ? { downloads: 1 } : { streams: 1 })
+  await audit(options.actor, {
+    action: isDownload ? 'DOWNLOAD' : 'STREAM',
+    projectId: project.id,
+    fileId: file.publicId,
+    target: file.originalName,
+  })
+  emit(project.id, isDownload ? 'file.downloaded' : 'file.streamed', { id: file.publicId, name: file.originalName })
 }
 
 /**

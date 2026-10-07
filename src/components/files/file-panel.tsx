@@ -17,7 +17,7 @@ import { cn, formatDate, formatDuration } from '@/lib/utils'
 import type { FileDialog } from './file-dialogs'
 
 export interface ProviderInfo {
-  kind: 'GOOGLE_DRIVE' | 'LOCAL'
+  kind: 'GOOGLE_DRIVE' | 'LOCAL' | 'S3'
   label: string
 }
 
@@ -218,7 +218,7 @@ function Preview({ file, project }: { file: FileDto; project: string }) {
 }
 
 /** Marque du fournisseur : le triangle Drive est dessiné ici, sans logo importé. */
-export function ProviderMark({ kind }: { kind: 'GOOGLE_DRIVE' | 'LOCAL' }) {
+export function ProviderMark({ kind }: { kind: 'GOOGLE_DRIVE' | 'LOCAL' | 'S3' }) {
   if (kind === 'GOOGLE_DRIVE') {
     return (
       <svg viewBox="0 0 87.3 78" className="h-7 w-7 shrink-0" aria-hidden="true">
@@ -233,7 +233,7 @@ export function ProviderMark({ kind }: { kind: 'GOOGLE_DRIVE' | 'LOCAL' }) {
   }
   return (
     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-surface-3 text-[0.62rem] font-semibold text-ink-2">
-      DSK
+      {kind === 'S3' ? 'S3' : 'DSK'}
     </span>
   )
 }

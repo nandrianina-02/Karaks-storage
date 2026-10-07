@@ -91,4 +91,5 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   REMOVE_MEMBER: 'Membre retiré',
   INVITE_MEMBER: 'Invitation',
   TRANSFER_OWNERSHIP: 'Propriété transférée',
+  MIGRATE_STORAGE: 'Changement de stockage',
 }

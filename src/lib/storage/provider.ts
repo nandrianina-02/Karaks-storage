@@ -43,7 +43,7 @@ export interface ByteRange {
 }
 
 export interface StorageProvider {
-  readonly kind: 'GOOGLE_DRIVE' | 'LOCAL'
+  readonly kind: 'GOOGLE_DRIVE' | 'LOCAL' | 'S3'
 
   createFolder(name: string, parentId: string | null): Promise<string>
   /** Envoi en une fois, pour les petits fichiers. */

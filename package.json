@@ -28,6 +28,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "aws4fetch": "^1.0.20",
     "better-auth": "^1.7.3",
     "clsx": "^2.1.1",
     "lucide-react": "^1.43.0",
