@@ -31,6 +31,10 @@ const schema = z.object({
     .optional()
     .transform((value) => value === 'true' || value === '1'),
 
+  /** Compteur de débit partagé entre instances (Upstash, API REST). */
+  UPSTASH_REDIS_REST_URL: optional,
+  UPSTASH_REDIS_REST_TOKEN: optional,
+
   /** Secret des tâches planifiées : Vercel l'envoie en `Authorization`. */
   CRON_SECRET: optional,
 

@@ -52,7 +52,7 @@ async function serve(request: Request, { params }: Context) {
     const { token } = await params
     // Freine l'essai de jetons au hasard sans gêner un lecteur, qui émet
     // quelques dizaines de requêtes de plage par minute au plus.
-    const limit = rateLimit(`link:${clientIp(request) ?? 'inconnu'}`, 600)
+    const limit = await rateLimit(`link:${clientIp(request) ?? 'inconnu'}`, 600)
     if (!limit.allowed) return refusal(429, 'Trop de requêtes. Réessayez dans un instant.', request)
 
     const head = parseRange(request.headers.get('range'), Number.MAX_SAFE_INTEGER)

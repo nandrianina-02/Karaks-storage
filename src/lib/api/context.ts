@@ -162,7 +162,7 @@ export async function authenticate(request: Request, options: { rateLimit?: 'api
   const { project, permissions } = await resolveProject(caller, projectRef(request))
 
   const who = caller.apiKey ? `key:${caller.apiKey.id}` : `user:${caller.user!.id}`
-  const limit = rateLimit(`api:${who}:${project.id}`, project.rateLimitPerMinute)
+  const limit = await rateLimit(`api:${who}:${project.id}`, project.rateLimitPerMinute)
   if (!limit.allowed) {
     throw new ApiError('rate_limited', 'Trop de requêtes. Réessayez dans un instant.', undefined, {
       'Retry-After': String(limit.resetIn),
@@ -171,7 +171,7 @@ export async function authenticate(request: Request, options: { rateLimit?: 'api
     })
   }
   if (options.rateLimit === 'links') {
-    const links = rateLimit(`links:${who}:${project.id}`, project.signedUrlPerMinute)
+    const links = await rateLimit(`links:${who}:${project.id}`, project.signedUrlPerMinute)
     if (!links.allowed) {
       throw new ApiError('rate_limited', 'Trop de liens créés. Réessayez dans un instant.', undefined, {
         'Retry-After': String(links.resetIn),

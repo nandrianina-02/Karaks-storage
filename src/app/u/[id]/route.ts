@@ -36,7 +36,7 @@ function cors(request: Request, origins: string[]): Record<string, string> {
 async function load(request: Request, { params }: Context) {
   const { id } = await params
   const token = new URL(request.url).searchParams.get('t') ?? ''
-  const limit = rateLimit(`upload-link:${clientIp(request) ?? 'inconnu'}`, 600)
+  const limit = await rateLimit(`upload-link:${clientIp(request) ?? 'inconnu'}`, 600)
   if (!limit.allowed) {
     throw new ApiError('rate_limited', 'Trop de requêtes. Réessayez dans un instant.', undefined, {
       'Retry-After': String(limit.resetIn),

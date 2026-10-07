@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 
 import { decrypt, encrypt, hashSecret, randomBase62, safeEqual, signPayload } from './crypto'
 import { API_KEY_PERMISSIONS, canCreateProject, permissionsFor } from './permissions'
-import { rateLimit, resetRateLimits } from './rate-limit'
+import { rateLimit as sharedRateLimit, rateLimitLocal as rateLimit, resetRateLimits } from './rate-limit'
 
 const SECRET = 'un-secret-de-test-suffisamment-long-pour-l-essai'
 
@@ -89,5 +89,57 @@ describe('rateLimit', () => {
     assert.equal(rateLimit('a', 1, 60_000, 0).allowed, true)
     assert.equal(rateLimit('b', 1, 60_000, 0).allowed, true)
     assert.equal(rateLimit('a', 1, 60_000, 0).allowed, false)
+  })
+})
+
+describe('rateLimit partagé', () => {
+  const realFetch = globalThis.fetch
+  function withRedis(reply: (body: unknown) => Response | Promise<Response>) {
+    process.env.UPSTASH_REDIS_REST_URL = 'https://redis.exemple'
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'jeton'
+    const calls: unknown[] = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body))
+      calls.push(body)
+      return reply(body)
+    }) as typeof fetch
+    return calls
+  }
+  function restore() {
+    globalThis.fetch = realFetch
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+  }
+
+  it('compte dans Redis, par fenêtre', async () => {
+    let count = 0
+    const calls = withRedis(() => Response.json([{ result: ++count }, { result: 1 }]))
+    try {
+      assert.equal((await sharedRateLimit('cle', 2)).allowed, true)
+      assert.equal((await sharedRateLimit('cle', 2)).allowed, true)
+      const third = await sharedRateLimit('cle', 2)
+      assert.equal(third.allowed, false)
+      assert.equal(third.remaining, 0)
+      const [[incr, expire]] = calls as string[][][]
+      assert.equal(incr[0], 'INCR')
+      assert.match(incr[1], /^ks:rl:cle:\d+$/)
+      assert.equal(expire[0], 'PEXPIRE')
+    } finally {
+      restore()
+    }
+  })
+
+  it('retombe sur le compteur local si Redis ne répond pas', async () => {
+    resetRateLimits()
+    withRedis(() => new Response('indisponible', { status: 503 }))
+    const warn = console.warn
+    console.warn = () => {}
+    try {
+      assert.equal((await sharedRateLimit('panne', 1)).allowed, true)
+      assert.equal((await sharedRateLimit('panne', 1)).allowed, false)
+    } finally {
+      console.warn = warn
+      restore()
+    }
   })
 })
