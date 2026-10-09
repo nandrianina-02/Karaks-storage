@@ -433,6 +433,9 @@ export async function serveFile(
     'Cross-Origin-Resource-Policy': options.embeddable || options.corsOrigin ? 'cross-origin' : 'same-origin',
   })
   if (file.checksum) headers.set('ETag', `"${file.checksum}"`)
+  // Un SVG peut porter du script : ouvert directement, il ne doit rien
+  // exécuter. Dans une balise <img>, cette politique ne change rien.
+  if (file.mimeType === 'image/svg+xml') headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")
   if (options.corsOrigin) {
     headers.set('Access-Control-Allow-Origin', options.corsOrigin)
     headers.set('Vary', 'Origin')

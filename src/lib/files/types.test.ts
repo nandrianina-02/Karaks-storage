@@ -102,3 +102,23 @@ describe('formatBytes', () => {
     assert.equal(formatBytes(68.4 * 1024 ** 3), '68,4 Go')
   })
 })
+
+describe('formats des applications mobiles et du web', () => {
+  const bytes = (text: string) => new TextEncoder().encode(text)
+  const iso = (brand: string) => new Uint8Array([0, 0, 0, 24, ...bytes('ftyp'), ...bytes(brand), 0, 0, 0, 0])
+
+  it('accepte les vidéos QuickTime et les images AVIF, conteneurs ISO', () => {
+    assert.equal(checkFileType('clip.mov', 'video/quicktime', iso('qt  ')).ok, true)
+    assert.equal(checkFileType('pochette.avif', 'image/avif', iso('avif')).ok, true)
+  })
+
+  it('reconnaît un SVG, prologue et commentaire compris', () => {
+    assert.equal(detectSignature(bytes('<svg xmlns="http://www.w3.org/2000/svg"></svg>')), 'svg')
+    assert.equal(detectSignature(bytes('<?xml version="1.0"?>\n<!-- logo -->\n<svg viewBox="0 0 1 1"/>')), 'svg')
+    assert.equal(checkFileType('logo.svg', 'image/svg+xml', bytes('<svg></svg>')).ok, true)
+  })
+
+  it('refuse un texte quelconque déguisé en SVG', () => {
+    assert.equal(checkFileType('logo.svg', 'image/svg+xml', bytes('<html><script>alert(1)</script></html>')).ok, false)
+  })
+})

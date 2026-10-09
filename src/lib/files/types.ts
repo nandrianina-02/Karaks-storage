@@ -33,6 +33,7 @@ type Signature =
   | 'gif'
   | 'webm'
   | 'pdf'
+  | 'svg'
   | 'text'
 
 export const FILE_TYPES: Record<string, TypeRule> = {
@@ -40,6 +41,7 @@ export const FILE_TYPES: Record<string, TypeRule> = {
   wav: { category: 'audio', mime: 'audio/wav', aliases: ['audio/x-wav', 'audio/wave', 'audio/vnd.wave'], signatures: ['wav'] },
   ogg: { category: 'audio', mime: 'audio/ogg', aliases: ['application/ogg', 'audio/vorbis', 'audio/opus'], signatures: ['ogg'] },
   oga: { category: 'audio', mime: 'audio/ogg', aliases: [], signatures: ['ogg'] },
+  opus: { category: 'audio', mime: 'audio/ogg', aliases: ['audio/opus', 'audio/ogg; codecs=opus'], signatures: ['ogg'] },
   flac: { category: 'audio', mime: 'audio/flac', aliases: ['audio/x-flac'], signatures: ['flac'] },
   aac: { category: 'audio', mime: 'audio/aac', aliases: ['audio/x-aac', 'audio/aacp'], signatures: ['aac', 'mp4'] },
   m4a: { category: 'audio', mime: 'audio/mp4', aliases: ['audio/x-m4a', 'audio/m4a', 'audio/aac'], signatures: ['mp4'] },
@@ -48,10 +50,19 @@ export const FILE_TYPES: Record<string, TypeRule> = {
   png: { category: 'image', mime: 'image/png', aliases: [], signatures: ['png'] },
   webp: { category: 'image', mime: 'image/webp', aliases: [], signatures: ['webp'] },
   gif: { category: 'image', mime: 'image/gif', aliases: [], signatures: ['gif'] },
+  // AVIF : conteneur ISO, comme le MP4 (boîte « ftyp »).
+  avif: { category: 'image', mime: 'image/avif', aliases: [], signatures: ['mp4'] },
+  // SVG : servi avec une politique de sécurité qui neutralise ses scripts
+  // (voir serveFile) ; sans elle, un SVG ouvert directement s'exécuterait
+  // avec l'origine du service.
+  svg: { category: 'image', mime: 'image/svg+xml', aliases: [], signatures: ['svg'] },
   mp4: { category: 'video', mime: 'video/mp4', aliases: ['application/mp4'], signatures: ['mp4'] },
   webm: { category: 'video', mime: 'video/webm', aliases: ['audio/webm'], signatures: ['webm'] },
+  // Vidéos des téléphones : QuickTime chez Apple, même conteneur ISO.
+  mov: { category: 'video', mime: 'video/quicktime', aliases: [], signatures: ['mp4'] },
+  m4v: { category: 'video', mime: 'video/x-m4v', aliases: ['video/mp4'], signatures: ['mp4'] },
   pdf: { category: 'document', mime: 'application/pdf', aliases: [], signatures: ['pdf'] },
-  txt: { category: 'document', mime: 'text/plain', aliases: [], signatures: ['text'] },
+  txt: { category: 'document', mime: 'text/plain', aliases: [], signatures: ['text', 'svg'] },
 }
 
 export const ACCEPTED_EXTENSIONS = Object.keys(FILE_TYPES)
@@ -88,7 +99,11 @@ export function detectSignature(bytes: Uint8Array): Signature | null {
     return (bytes[1] & 0x06) === 0 ? 'aac' : 'mp3'
   }
 
-  return isText(bytes) ? 'text' : null
+  if (!isText(bytes)) return null
+  // Un SVG est du texte : on le reconnaît à sa balise racine, après un
+  // éventuel prologue XML, une DTD ou des commentaires.
+  const start = new TextDecoder().decode(bytes.subarray(0, 1024))
+  return /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg[\s>]/i.test(start) ? 'svg' : 'text'
 }
 
 /**
