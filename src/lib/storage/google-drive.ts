@@ -305,7 +305,10 @@ export function googleDriveAuthUrl(input: { clientId: string; redirectUri: strin
     // rafraîchissement qu'à la toute première autorisation, et une
     // reconnexion laisserait le service sans accès durable.
     access_type: 'offline',
-    prompt: 'consent',
+    // `select_account` : Google propose de choisir le compte, plutôt que de
+    // reprendre d'office celui du navigateur — c'est ainsi qu'on en relie
+    // un deuxième.
+    prompt: 'consent select_account',
     include_granted_scopes: 'true',
     state: input.state,
   })

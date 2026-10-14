@@ -81,7 +81,7 @@ export async function checkProviderSpace() {
         title: `L’espace de ${providerLabel(provider)} s’épuise`,
         paragraphs: [
           `Le compte de stockage ${provider.accountEmail ?? ''} est rempli à ${Math.round(percent)} %. Plein, il refusera tous les envois, de tous les projets qu’il porte.`,
-          'Pour Google Drive, l’espace est partagé avec Gmail et Google Photos de ce compte. Solutions : libérer de la place, prendre un abonnement plus grand, ou déplacer des projets vers un stockage S3 depuis les paramètres.',
+          'Pour Google Drive, l’espace est partagé avec Gmail et Google Photos de ce compte. Dès 80 %, les nouveaux fichiers partent d’eux-mêmes sur un autre stockage relié qui a de la place ; sans autre stockage, reliez un deuxième compte Google ou un compartiment S3 depuis les paramètres.',
         ],
         details: [
           ['Utilisé', formatBytes(quota.usage)],

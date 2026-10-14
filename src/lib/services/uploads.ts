@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma'
 import type { Actor } from '@/lib/services/audit'
 import { afterUpload, assertCanStore, storageNameFor, waveformInput } from '@/lib/services/files'
 import { findFolder } from '@/lib/services/folders'
+import { placerFichier } from '@/lib/services/placement'
 import { forgetQuota, withProvider } from '@/lib/storage'
 import { hashSecret, randomBase62, safeEqual } from '@/lib/security/crypto'
 import { CHUNK_GRANULARITY, type ResumableState } from '@/lib/storage/provider'
@@ -40,6 +41,12 @@ export const createUploadInput = z.object({
   waveform: waveformInput.optional(),
 })
 
+/** Stockage d'une session : celui retenu à l'ouverture, ou celui du projet pour les sessions plus anciennes. */
+async function stockageDeLEnvoi(project: ProjectWithProvider, session: { providerId: string | null }) {
+  if (!session.providerId || session.providerId === project.providerId) return project.provider
+  return prisma.storageProvider.findUniqueOrThrow({ where: { id: session.providerId } })
+}
+
 export async function createUpload(
   project: ProjectWithProvider,
   actor: Actor,
@@ -55,11 +62,14 @@ export async function createUpload(
 
   // Jeton de l'adresse d'envoi direct : seule son empreinte est conservée.
   const token = randomBase62(32)
-  const providerSession = await withProvider(project.provider, (storage) =>
+  // Le stockage du projet, ou un autre compte si le sien a passé le seuil
+  // de bascule : la session retient lequel, pour la suite de l'envoi.
+  const place = await placerFichier(project, input.size, folder?.providerFolderId ?? project.providerFolderId)
+  const providerSession = await withProvider(place.provider, (storage) =>
     storage.startResumable({
       name: storageNameFor(filePublicId, type.extension),
       mimeType: type.mimeType,
-      parentId: folder?.providerFolderId ?? project.providerFolderId,
+      parentId: place.parentId,
       size: input.size,
     }),
   )
@@ -80,6 +90,7 @@ export async function createUpload(
       height: input.height ?? null,
       waveform: input.waveform ?? [],
       providerSession,
+      providerId: place.provider.id,
       uploadTokenHash: hashSecret(token, env.API_SECRET),
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
     },
@@ -132,7 +143,7 @@ async function finalize(project: ProjectWithProvider, session: UploadSession, st
         mimeType: session.mimeType,
         size: BigInt(state.object!.size || Number(session.size)),
         checksum: state.object!.checksum ?? null,
-        providerId: project.providerId,
+        providerId: session.providerId ?? project.providerId,
         providerFileId: state.object!.id,
         status: 'ACTIVE',
         durationSeconds: session.durationSeconds,
@@ -148,7 +159,7 @@ async function finalize(project: ProjectWithProvider, session: UploadSession, st
     })
     return created
   })
-  forgetQuota(project.provider.id)
+  forgetQuota(session.providerId ?? project.provider.id)
   await afterUpload(project.id, actor, file)
   return file
 }
@@ -189,7 +200,7 @@ export async function receiveChunk(
     }
   }
 
-  const state = await withProvider(project.provider, (storage) =>
+  const state = await withProvider(await stockageDeLEnvoi(project, session), (storage) =>
     storage.uploadChunk(session.providerSession!, chunk, range.start, total),
   )
 
@@ -211,7 +222,7 @@ export async function uploadStatus(project: ProjectWithProvider, publicId: strin
     const file = await prisma.file.findUnique({ where: { id: session.fileId! }, include: { folder: { select: { publicId: true } } } })
     return { session, received: Number(session.size), file }
   }
-  const state = await withProvider(project.provider, (storage) =>
+  const state = await withProvider(await stockageDeLEnvoi(project, session), (storage) =>
     storage.queryResumable(session.providerSession!, Number(session.size)),
   )
   if (state.done) {
@@ -228,7 +239,8 @@ export async function abortUpload(project: ProjectWithProvider, publicId: string
   const session = await prisma.uploadSession.findFirst({ where: { projectId: project.id, publicId } })
   if (!session || session.status !== 'PENDING') return
   if (session.providerSession) {
-    await withProvider(project.provider, (storage) => storage.abortResumable(session.providerSession!)).catch(() => undefined)
+    const stockage = await stockageDeLEnvoi(project, session).catch(() => project.provider)
+    await withProvider(stockage, (storage) => storage.abortResumable(session.providerSession!)).catch(() => undefined)
   }
   await prisma.uploadSession.update({
     where: { id: session.id },

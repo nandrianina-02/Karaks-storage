@@ -199,8 +199,9 @@ export function s3Config(row: Pick<ProviderRow, 'kind' | 'config'>): S3Config | 
 }
 
 /** Nom affiché d'un fournisseur. */
-export function providerLabel(row: Pick<ProviderRow, 'kind' | 'name'>): string {
-  if (row.kind === 'GOOGLE_DRIVE') return 'Google Drive'
+export function providerLabel(row: Pick<ProviderRow, 'kind' | 'name'> & { accountEmail?: string | null }): string {
+  // Plusieurs comptes peuvent être reliés : l'adresse les distingue.
+  if (row.kind === 'GOOGLE_DRIVE') return row.accountEmail ? `Google Drive (${row.accountEmail})` : 'Google Drive'
   if (row.kind === 'LOCAL') return 'Disque local (développement)'
   return row.name
 }

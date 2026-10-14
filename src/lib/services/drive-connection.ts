@@ -34,25 +34,27 @@ export async function completeDriveConnection(code: string, actor: Actor) {
     throw new ApiError('forbidden', 'L’accès à Google Drive n’a pas été accordé : cochez-le sur l’écran de Google.')
   }
 
-  const existing = await prisma.storageProvider.findFirst({
-    where: { kind: 'GOOGLE_DRIVE' },
-    include: { _count: { select: { projects: true } } },
-  })
-
-  // Avec le droit `drive.file`, l'application ne voit que les fichiers
-  // qu'elle a créés dans ce compte-là : relier un autre compte rendrait
-  // illisibles tous les fichiers déjà stockés.
-  if (
-    existing?.accountEmail &&
-    grant.email &&
-    existing.accountEmail !== grant.email &&
-    existing._count.projects > 0
-  ) {
-    throw new ApiError(
-      'conflict',
-      `Des projets sont stockés sur ${existing.accountEmail} : reconnectez ce même compte.`,
-    )
-  }
+  /**
+   * Plusieurs comptes Google peuvent être reliés, chacun son stockage.
+   *
+   * Le compte choisi sur l'écran de Google décide de ce qui se passe : déjà
+   * relié, il est simplement reconnecté (nouveau jeton) ; nouveau, il
+   * s'ajoute aux autres. Aucun compte n'en remplace un autre : avec le droit
+   * `drive.file`, l'application ne voit que les fichiers qu'elle a créés dans
+   * chaque compte, et en changer rendrait les précédents illisibles.
+   *
+   * Seule exception, un stockage Drive encore anonyme (relié avant que
+   * l'adresse du compte ne soit retenue) et vide : il est repris.
+   */
+  const memeCompte = grant.email
+    ? await prisma.storageProvider.findFirst({ where: { kind: 'GOOGLE_DRIVE', accountEmail: grant.email } })
+    : null
+  const anonymeVide = memeCompte
+    ? null
+    : await prisma.storageProvider.findFirst({
+        where: { kind: 'GOOGLE_DRIVE', accountEmail: null, projects: { none: {} }, files: { none: {} } },
+      })
+  const existing = memeCompte ?? anonymeVide
 
   const data = {
     name: 'Google Drive',
@@ -62,16 +64,13 @@ export async function completeDriveConnection(code: string, actor: Actor) {
     connectedAt: new Date(),
     lastError: null,
   }
-  const sameAccount = existing && (!existing.accountEmail || existing.accountEmail === grant.email)
+  // Le dossier racine imposé par l'environnement ne vaut que pour le premier
+  // compte : un autre compte n'y a pas accès.
+  const premier = (await prisma.storageProvider.count({ where: { kind: 'GOOGLE_DRIVE' } })) === 0
   const provider = existing
-    ? await prisma.storageProvider.update({
-        where: { id: existing.id },
-        data: sameAccount
-          ? data
-          : { ...data, rootFolderId: null, projectsFolderId: null, temporaryFolderId: null, trashFolderId: null },
-      })
+    ? await prisma.storageProvider.update({ where: { id: existing.id }, data })
     : await prisma.storageProvider.create({
-        data: { kind: 'GOOGLE_DRIVE', ...data, rootFolderId: env.GOOGLE_DRIVE_ROOT_FOLDER_ID ?? null },
+        data: { kind: 'GOOGLE_DRIVE', ...data, rootFolderId: premier ? env.GOOGLE_DRIVE_ROOT_FOLDER_ID ?? null : null },
       })
 
   const ready = await ensureDriveLayout(provider)

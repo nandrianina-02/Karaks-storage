@@ -93,11 +93,11 @@ export async function removeProvider(id: string, actor: Actor) {
     include: { _count: { select: { projects: true, files: true, migrationsFrom: true, migrationsTo: true } } },
   })
   if (!provider) throw new ApiError('not_found', 'Fournisseur introuvable.')
-  if (provider.kind !== 'S3') throw new ApiError('bad_request', 'Seul un stockage S3 se retire d’ici.')
+  if (provider.kind === 'LOCAL') throw new ApiError('bad_request', 'Le disque local ne se retire pas d’ici.')
   if (provider._count.projects > 0 || provider._count.files > 0) {
     throw new ApiError('conflict', 'Ce stockage porte encore des projets ou des fichiers : déplacez-les d’abord.')
   }
   await prisma.providerMigration.deleteMany({ where: { OR: [{ fromProviderId: id }, { toProviderId: id }], status: { not: 'RUNNING' } } })
   await prisma.storageProvider.delete({ where: { id } })
-  await audit(actor, { action: 'CONNECT_PROVIDER', target: provider.name, details: { kind: 'S3', removed: true } })
+  await audit(actor, { action: 'CONNECT_PROVIDER', target: provider.accountEmail ?? provider.name, details: { kind: provider.kind, removed: true } })
 }

@@ -9,11 +9,12 @@ import { checkFileType, formatBytes, sanitizeFileName, type FileCategory } from 
 import { newPublicId } from '@/lib/ids'
 import { prisma } from '@/lib/prisma'
 import { checkProjectQuotaSoon } from '@/lib/services/alerts'
+import { placerFichier } from '@/lib/services/placement'
 import { audit, type Actor } from '@/lib/services/audit'
 import { findFolder } from '@/lib/services/folders'
 import { recordUsage } from '@/lib/services/usage'
 import { emit } from '@/lib/services/webhooks'
-import { fileProvider, forgetQuota, providerQuota, s3Config, withProvider } from '@/lib/storage'
+import { fileProvider, forgetQuota, s3Config, withProvider } from '@/lib/storage'
 import type { S3Provider } from '@/lib/storage/s3'
 
 /**
@@ -133,13 +134,9 @@ export async function assertCanStore(project: ProjectWithProvider, size: number)
     }
   }
 
-  // Le compte Google a sa propre limite (15 Go pour un compte gratuit), qui
-  // couvre aussi Gmail et Photos : mieux vaut refuser proprement ici qu'au
-  // milieu d'un envoi.
-  const quota = await providerQuota(project.provider).catch(() => null)
-  if (quota?.limit && quota.usage + size > quota.limit) {
-    throw new ApiError('quota_exceeded', 'L’espace du stockage est plein.')
-  }
+  // L'espace du compte de stockage (15 Go pour un compte Google gratuit,
+  // Gmail et Photos compris) est vérifié au placement du fichier : au-delà
+  // de 80 %, il part sur un autre stockage relié (services/placement.ts).
 }
 
 export function storageNameFor(publicId: string, extension: string) {
@@ -179,15 +176,16 @@ export async function uploadFile(
   const publicId = newPublicId('file')
   const storageName = storageNameFor(publicId, type.extension)
 
-  const stored = await withProvider(project.provider, (storage) =>
+  const place = await placerFichier(project, input.data.byteLength, folder?.providerFolderId ?? project.providerFolderId)
+  const stored = await withProvider(place.provider, (storage) =>
     storage.upload({
       name: storageName,
       mimeType: type.mimeType,
-      parentId: folder?.providerFolderId ?? project.providerFolderId,
+      parentId: place.parentId,
       data: input.data,
     }),
   )
-  forgetQuota(project.provider.id)
+  forgetQuota(place.provider.id)
 
   const file = await prisma.file.create({
     data: {
@@ -202,7 +200,7 @@ export async function uploadFile(
       mimeType: type.mimeType,
       size: BigInt(input.data.byteLength),
       checksum: stored.checksum ?? null,
-      providerId: project.providerId,
+      providerId: place.provider.id,
       providerFileId: stored.id,
       status: 'ACTIVE',
       durationSeconds: input.durationSeconds ?? null,

@@ -120,7 +120,8 @@ describe('googleDriveAuthUrl', () => {
   it('demande un accès hors ligne limité aux fichiers de l’application', () => {
     const url = new URL(googleDriveAuthUrl({ clientId: 'id', redirectUri: 'http://localhost/cb', state: 'etat' }))
     assert.equal(url.searchParams.get('access_type'), 'offline')
-    assert.equal(url.searchParams.get('prompt'), 'consent')
+    // Le choix du compte permet d'en relier plusieurs.
+    assert.equal(url.searchParams.get('prompt'), 'consent select_account')
     assert.match(url.searchParams.get('scope')!, /auth\/drive\.file/)
     assert.doesNotMatch(url.searchParams.get('scope')!, /auth\/drive( |$)/)
   })

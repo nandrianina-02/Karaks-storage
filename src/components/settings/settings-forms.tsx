@@ -1,6 +1,6 @@
 'use client'
 
-import { CircleAlert, CircleCheck, Monitor, Moon, Save, Sun, Trash2, TriangleAlert, Unplug } from 'lucide-react'
+import { CircleAlert, CircleCheck, Monitor, Moon, Plus, Save, Sun, Trash2, TriangleAlert, Unplug } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
@@ -308,7 +308,7 @@ export function StorageSettings({
   /** Stockages S3 et changements de stockage : super administrateur seulement. */
   admin: { providers: AdminProvider[]; projects: AdminProject[]; migrations: AdminMigration[] } | null
 }) {
-  const drive = providers.find((provider) => provider.kind === 'GOOGLE_DRIVE')
+  const drives = providers.filter((provider) => provider.kind === 'GOOGLE_DRIVE')
   return (
     <div className="space-y-5">
       {notice && (
@@ -319,47 +319,41 @@ export function StorageSettings({
       )}
 
       <Card className="animate-rise stagger-1">
-        <CardHeader title="Google Drive" description="Stockage de la première version. L’application n’accède qu’aux fichiers qu’elle a créés (droit drive.file)." />
-        <div className="space-y-4 px-5 pb-5">
-          <div className="flex flex-wrap items-center gap-3">
+        <CardHeader
+          title="Google Drive"
+          description="Un ou plusieurs comptes. Au-delà de 80 % d’un compte, les nouveaux fichiers partent d’eux-mêmes sur celui qui a le plus de place."
+        />
+        {drives.length === 0 ? (
+          <div className="flex items-center gap-3 px-5 pb-4">
             <ProviderMark kind="GOOGLE_DRIVE" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-ink">{drive?.account ?? 'Aucun compte relié'}</p>
-              <p className="text-xs text-muted">
-                {drive?.connectedAt ? `Relié le ${formatDate(drive.connectedAt)}` : 'Dossier racine : KARAKS STORAGE'}
-                {drive ? ` · ${drive.projects} projet${drive.projects > 1 ? 's' : ''} · ${drive.files} fichier${drive.files > 1 ? 's' : ''}` : ''}
-              </p>
-            </div>
-            {drive?.status === 'CONNECTED' ? (
-              <Badge tone="success">Connecté</Badge>
-            ) : drive?.status === 'ERROR' ? (
-              <Badge tone="danger">Accès perdu</Badge>
-            ) : (
-              <Badge>Non connecté</Badge>
-            )}
+            <p className="text-sm text-ink-2">Aucun compte relié. Dossier racine créé à la connexion : KARAKS STORAGE.</p>
           </div>
+        ) : (
+          <ul className="stagger">
+            {drives.map((drive) => (
+              <CompteDrive key={drive.id} drive={drive} retirable={isSuperAdmin && drives.length > 1} />
+            ))}
+          </ul>
+        )}
 
-          {drive?.lastError && drive.status === 'ERROR' && <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{drive.lastError}</p>}
-
-          {drive?.quota?.limit && (
-            <div>
-              <Meter value={(drive.quota.usage / drive.quota.limit) * 100} tone={meterTone((drive.quota.usage / drive.quota.limit) * 100)} label="Espace du compte Google" />
-              <p className="mt-2 text-xs text-ink-2 tabular-nums">
-                {formatBytes(drive.quota.usage)} utilisés sur {formatBytes(drive.quota.limit)} (Gmail et Photos compris)
-              </p>
-            </div>
-          )}
-
+        <div className="border-t border-line px-5 py-4">
           {isSuperAdmin ? (
             googleConfigured ? (
-              // Redirection OAuth vers Google : il faut une vraie navigation, que
-              // <Link> remplacerait par un chargement côté client. La règle prend
-              // cette route d'API pour une page depuis l'ajout de /storage/[id].
-              // eslint-disable-next-line @next/next/no-html-link-for-pages
-              <a href="/api/v1/storage/google/connect" className={buttonClass(drive?.status === 'CONNECTED' ? 'secondary' : 'primary', 'md')}>
-                <Unplug className="h-4 w-4" />
-                {drive?.status === 'CONNECTED' ? 'Reconnecter Google Drive' : 'Connecter Google Drive'}
-              </a>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Redirection OAuth vers Google : il faut une vraie navigation, que
+                    <Link> remplacerait par un chargement côté client. La règle prend
+                    cette route d'API pour une page depuis l'ajout de /storage/[id]. */}
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+                <a href="/api/v1/storage/google/connect" className={buttonClass(drives.length === 0 ? 'primary' : 'secondary', 'md')}>
+                  {drives.length === 0 ? <Unplug className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {drives.length === 0 ? 'Connecter Google Drive' : 'Ajouter un compte Google'}
+                </a>
+                <p className="text-xs leading-relaxed text-muted">
+                  {drives.length === 0
+                    ? 'L’application n’accède qu’aux fichiers qu’elle crée (droit drive.file).'
+                    : 'Choisissez un compte déjà relié sur l’écran de Google pour le reconnecter, un autre pour l’ajouter.'}
+                </p>
+              </div>
             ) : (
               <p className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-xs leading-relaxed text-ink-2">
                 Renseignez GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET dans la configuration du serveur, avec l’URI de redirection
@@ -512,5 +506,68 @@ export function AppearanceSettings() {
         ))}
       </div>
     </Card>
+  )
+}
+
+/** Un compte Google relié : espace, état, et retrait tant qu'il ne porte rien. */
+function CompteDrive({ drive, retirable }: { drive: ProviderRow; retirable: boolean }) {
+  const router = useRouter()
+  const toast = useToast()
+  const [, startTransition] = useTransition()
+  const [busy, setBusy] = useState(false)
+  const pourcent = drive.quota?.limit ? (drive.quota.usage / drive.quota.limit) * 100 : null
+  const vide = drive.projects === 0 && drive.files === 0
+
+  async function retirer() {
+    setBusy(true)
+    try {
+      await api(`/api/v1/storage/${drive.id}`, { method: 'DELETE' })
+      toast.success('Compte retiré', drive.account ?? 'Google Drive')
+      startTransition(() => router.refresh())
+    } catch (error) {
+      toast.error('Retrait impossible', errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="space-y-3 border-t border-line px-5 py-4 first:border-t-0 first:pt-1">
+      <div className="flex flex-wrap items-center gap-3">
+        <ProviderMark kind="GOOGLE_DRIVE" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{drive.account ?? 'Compte sans adresse'}</p>
+          <p className="text-xs text-muted">
+            {drive.connectedAt ? `Relié le ${formatDate(drive.connectedAt)} · ` : ''}
+            {drive.projects} projet{drive.projects > 1 ? 's' : ''} · {drive.files} fichier{drive.files > 1 ? 's' : ''}
+          </p>
+        </div>
+        {pourcent !== null && pourcent >= 80 && drive.status === 'CONNECTED' && <Badge tone="warning">Plein à 80 % : en relais</Badge>}
+        {drive.status === 'CONNECTED' ? (
+          <Badge tone="success">Connecté</Badge>
+        ) : drive.status === 'ERROR' ? (
+          <Badge tone="danger">Accès perdu</Badge>
+        ) : (
+          <Badge>Non connecté</Badge>
+        )}
+        {retirable && vide && (
+          <Button size="sm" variant="danger-ghost" loading={busy} icon={<Trash2 className="h-3.5 w-3.5" />} onClick={retirer}>
+            Retirer
+          </Button>
+        )}
+      </div>
+      {drive.lastError && drive.status === 'ERROR' && <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{drive.lastError}</p>}
+      {drive.quota?.limit && pourcent !== null && (
+        <div>
+          <Meter value={pourcent} tone={meterTone(pourcent)} label={`Espace du compte ${drive.account ?? 'Google'}`} />
+          <p className="mt-2 flex justify-between text-xs text-ink-2 tabular-nums">
+            <span>
+              {formatBytes(drive.quota.usage)} utilisés sur {formatBytes(drive.quota.limit)} (Gmail et Photos compris)
+            </span>
+            <span>{Math.round(pourcent)} %</span>
+          </p>
+        </div>
+      )}
+    </li>
   )
 }

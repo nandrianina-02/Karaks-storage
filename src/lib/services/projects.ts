@@ -6,6 +6,7 @@ import { DEFAULT_PLAN, PLAN_IDS, planLabel, planLimits, type PlanId } from '@/li
 import { prisma } from '@/lib/prisma'
 import { audit, type Actor } from '@/lib/services/audit'
 import { canCreateProject, type GlobalRoleName } from '@/lib/security/permissions'
+import { placerProjet } from '@/lib/services/placement'
 import { defaultProvider, forgetQuota, withProvider } from '@/lib/storage'
 
 /**
@@ -89,7 +90,7 @@ export async function createProject(
   if (!canCreateProject(user.role)) {
     throw new ApiError('forbidden', 'Seul un administrateur peut créer un projet.')
   }
-  const provider = await defaultProvider()
+  const provider = await placerProjet(await defaultProvider())
   const slug = await uniqueSlug(slugify(input.name))
 
   const providerFolderId = await withProvider(provider, (storage) =>
@@ -181,18 +182,51 @@ export function canDeleteProject(globalRole: GlobalRoleName, projectRole: string
 export async function deleteProject(projectId: string, actor: Actor) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { provider: true } })
   const [files, folders, uploads] = await Promise.all([
-    prisma.file.findMany({ where: { projectId }, select: { providerFileId: true, size: true } }),
+    prisma.file.findMany({ where: { projectId }, select: { providerFileId: true, providerId: true, size: true } }),
     prisma.folder.findMany({ where: { projectId }, select: { id: true, parentId: true, providerFolderId: true } }),
-    prisma.uploadSession.findMany({ where: { projectId, status: 'PENDING' }, select: { providerSession: true } }),
+    prisma.uploadSession.findMany({ where: { projectId, status: 'PENDING' }, select: { providerSession: true, providerId: true } }),
   ])
+
+  /**
+   * Fichiers et envois rangés ailleurs que chez le stockage du projet : après
+   * une bascule (services/placement.ts) ou pendant une migration. Ils sont
+   * effacés chez leur propre stockage, avec le dossier du projet là-bas.
+   */
+  const ailleurs = new Set(
+    [...files.map((file) => file.providerId), ...uploads.map((upload) => upload.providerId)].filter(
+      (id): id is string => Boolean(id) && id !== project.providerId,
+    ),
+  )
+  const dossiersAilleurs = await prisma.projectStorageFolder.findMany({ where: { projectId } })
+  for (const id of new Set([...ailleurs, ...dossiersAilleurs.map((d) => d.providerId)])) {
+    const row = await prisma.storageProvider.findUnique({ where: { id } })
+    if (!row) continue
+    await withProvider(row, async (storage) => {
+      for (const upload of uploads) {
+        if (upload.providerId === id && upload.providerSession) await storage.abortResumable(upload.providerSession)
+      }
+      const ids = files.filter((file) => file.providerId === id).map((file) => file.providerFileId).filter((v): v is string => Boolean(v))
+      for (let index = 0; index < ids.length; index += 4) {
+        await Promise.all(ids.slice(index, index + 4).map((fileId) => storage.delete(fileId)))
+      }
+      const dossier = dossiersAilleurs.find((d) => d.providerId === id)
+      if (dossier) await storage.delete(dossier.folderId)
+    })
+    forgetQuota(id)
+  }
 
   await withProvider(project.provider, async (storage) => {
     for (const upload of uploads) {
-      if (upload.providerSession) await storage.abortResumable(upload.providerSession)
+      if (upload.providerSession && (!upload.providerId || upload.providerId === project.providerId)) {
+        await storage.abortResumable(upload.providerSession)
+      }
     }
     // Quatre suppressions à la fois : assez pour avancer, sans heurter les
     // limites de requêtes de Google.
-    const ids = files.map((file) => file.providerFileId).filter((id): id is string => Boolean(id))
+    const ids = files
+      .filter((file) => file.providerId === project.providerId)
+      .map((file) => file.providerFileId)
+      .filter((id): id is string => Boolean(id))
     for (let index = 0; index < ids.length; index += 4) {
       await Promise.all(ids.slice(index, index + 4).map((id) => storage.delete(id)))
     }

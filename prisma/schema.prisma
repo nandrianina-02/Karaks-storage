@@ -179,6 +179,7 @@ model StorageProvider {
 
   projects Project[]
   files    File[]
+  dossiersProjets ProjectStorageFolder[]
   migrationsFrom ProviderMigration[] @relation("MigrationSource")
   migrationsTo   ProviderMigration[] @relation("MigrationTarget")
 
@@ -232,6 +233,7 @@ model Project {
   members  ProjectMember[]
   invitations ProjectInvitation[]
   migrations  ProviderMigration[]
+  dossiersStockage ProjectStorageFolder[]
   folders  Folder[]
   files    File[]
   apiKeys  ApiKey[]
@@ -403,6 +405,9 @@ model UploadSession {
   /// Adresse de session reprenable chez le fournisseur. Elle vaut un droit
   /// d'écriture : elle ne quitte jamais le serveur.
   providerSession String?
+  /// Stockage visé par l'envoi : celui du projet, ou un autre compte quand
+  /// le sien dépasse le seuil de bascule (voir services/placement.ts).
+  providerId      String?
   /// Empreinte du jeton de l'adresse d'envoi direct `/u/<id>?t=<jeton>`,
   /// remise au navigateur pour qu'il envoie sans détenir de clé API.
   uploadTokenHash String?
@@ -676,4 +681,19 @@ model AlertState {
   sentAt DateTime @default(now())
 
   @@map("alert_states")
+}
+
+/// Dossier d'un projet dans un autre stockage que le sien : celui où vont ses
+/// nouveaux fichiers quand son compte dépasse le seuil de bascule.
+model ProjectStorageFolder {
+  id         String @id @default(cuid())
+  projectId  String
+  providerId String
+  folderId   String
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider StorageProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, providerId])
+  @@map("project_storage_folders")
 }

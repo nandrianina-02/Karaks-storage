@@ -277,16 +277,21 @@ const SECRET = hook.data.secret
 // récepteur de ce scénario n'y est pas joignable, l'essai est alors sauté.
 const webhookTestable = hook.status === 201
 if (!webhookTestable) console.log('       webhook vers localhost refusé (serveur de production) : essai sauté')
+// Le projet d'essai est réutilisé d'un passage à l'autre : les webhooks des
+// passages précédents envoient eux aussi vers ce récepteur, chacun avec son
+// secret. On cherche l'envoi signé par celui créé ici.
+const signeParCeluiCi = (item) => {
+  const [, t, v1] = /t=(\d+),v1=([0-9a-f]+)/.exec(item.headers['karaks-signature'] ?? '') ?? []
+  return Boolean(v1) && createHmac('sha256', SECRET).update(`${t}.${item.body}`).digest('hex') === v1
+}
 const tiny = new FormData()
 tiny.append('file', new Blob([new TextEncoder().encode('webhook e2e\n')], { type: 'text/plain' }), 'webhook-e2e.txt')
 const tinyFile = await request('/api/v1/files/upload', { method: 'POST', key: KEY, body: tiny })
-for (let i = 0; webhookTestable && i < 30 && !received.some((item) => item.body.includes(tinyFile.data.file.id)); i += 1) {
+for (let i = 0; webhookTestable && i < 30 && !received.some((item) => item.body.includes(tinyFile.data.file.id) && signeParCeluiCi(item)); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 200))
 }
-const delivery = received.find((item) => item.body.includes(tinyFile.data.file.id))
-const [, t, v1] = /t=(\d+),v1=([0-9a-f]+)/.exec(delivery?.headers['karaks-signature'] ?? '') ?? []
-const expected = delivery ? createHmac('sha256', SECRET).update(`${t}.${delivery.body}`).digest('hex') : ''
-if (webhookTestable) check('le webhook file.uploaded arrive, signé', Boolean(delivery) && v1 === expected, delivery?.headers['karaks-event'])
+const delivery = received.find((item) => item.body.includes(tinyFile.data.file.id) && signeParCeluiCi(item))
+if (webhookTestable) check('le webhook file.uploaded arrive, signé', Boolean(delivery), delivery?.headers['karaks-event'] ?? `${received.length} envois reçus, aucun signé par ce webhook`)
 
 // --- Corbeille ---
 const trash = await request(`/api/v1/files/${FILE}`, { method: 'DELETE', project: P })
