@@ -5,7 +5,7 @@ import type { ProjectWithProvider } from '@/lib/api/context'
 import { ApiError } from '@/lib/api/errors'
 import { env } from '@/lib/env'
 import { parseRange } from '@/lib/files/range'
-import { checkFileType, formatBytes, sanitizeFileName, type FileCategory } from '@/lib/files/types'
+import { FILE_TYPES, checkFileType, formatBytes, sanitizeFileName, type FileCategory } from '@/lib/files/types'
 import { newPublicId } from '@/lib/ids'
 import { prisma } from '@/lib/prisma'
 import { checkProjectQuotaSoon } from '@/lib/services/alerts'
@@ -166,9 +166,11 @@ export async function uploadFile(
   project: ProjectWithProvider,
   actor: Actor,
   input: z.infer<typeof uploadFields> & { fileName: string; declaredMime: string; data: Uint8Array },
+  /** L'appelant peut déposer des fichiers chiffrés (`files:upload-encrypted`). */
+  options: { chiffre?: boolean } = {},
 ) {
   const name = sanitizeFileName(input.name || input.fileName)
-  const type = checkFileType(name, input.declaredMime, input.data.subarray(0, 4096))
+  const type = checkFileType(name, input.declaredMime, input.data.subarray(0, 4096), options)
   if (!type.ok) throw new ApiError('unsupported_media_type', type.reason)
   await assertCanStore(project, input.data.byteLength)
 
@@ -256,7 +258,7 @@ export async function updateFile(
     const name = sanitizeFileName(input.name)
     // L'extension fixe le type servi : la changer par un renommage ferait
     // diffuser un fichier sous un type qui n'est pas le sien.
-    const type = checkFileType(name, file.mimeType)
+    const type = checkFileType(name, file.mimeType, undefined, { chiffre: FILE_TYPES[file.extension]?.chiffre })
     if (!type.ok || type.extension !== file.extension) {
       throw new ApiError('bad_request', `Le nom doit garder l'extension .${file.extension}.`)
     }

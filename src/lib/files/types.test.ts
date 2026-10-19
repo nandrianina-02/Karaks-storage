@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { checkFileType, detectSignature, formatBytes, sanitizeFileName } from './types'
+import { ACCEPTED_EXTENSIONS, checkFileType, detectSignature, formatBytes, sanitizeFileName } from './types'
 
 const bytes = (...values: (number | string)[]) =>
   new Uint8Array(values.flatMap((value) => (typeof value === 'string' ? [...value].map((c) => c.charCodeAt(0)) : [value])))
@@ -120,5 +120,34 @@ describe('formats des applications mobiles et du web', () => {
 
   it('refuse un texte quelconque déguisé en SVG', () => {
     assert.equal(checkFileType('logo.svg', 'image/svg+xml', bytes('<html><script>alert(1)</script></html>')).ok, false)
+  })
+})
+
+describe('fichier chiffré', () => {
+  const hasard = new Uint8Array(64).map((_, i) => (i * 97 + 13) % 256)
+
+  it('refusé sans le droit, même annoncé correctement', () => {
+    assert.equal(checkFileType('f.bin', 'application/octet-stream', hasard).ok, false)
+  })
+
+  it('accepté avec le droit : aucun contenu à reconnaître', () => {
+    assert.deepEqual(checkFileType('f.bin', 'application/octet-stream', hasard, { chiffre: true }), {
+      ok: true,
+      extension: 'bin',
+      mimeType: 'application/octet-stream',
+      category: 'document',
+    })
+  })
+
+  it('un type annoncé autre que générique est refusé', () => {
+    assert.equal(checkFileType('f.bin', 'image/jpeg', hasard, { chiffre: true }).ok, false)
+  })
+
+  it('le droit ne dispense pas les autres formats de leur vérification', () => {
+    assert.equal(checkFileType('photo.jpg', 'image/jpeg', hasard, { chiffre: true }).ok, false)
+  })
+
+  it('le tableau de bord ne propose pas de déposer un fichier chiffré', () => {
+    assert.equal(ACCEPTED_EXTENSIONS.includes('bin'), false)
   })
 })

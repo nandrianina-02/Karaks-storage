@@ -51,9 +51,11 @@ export async function createUpload(
   project: ProjectWithProvider,
   actor: Actor,
   input: z.infer<typeof createUploadInput>,
+  /** L'appelant peut déposer des fichiers chiffrés (`files:upload-encrypted`). */
+  options: { chiffre?: boolean } = {},
 ) {
   const name = sanitizeFileName(input.name)
-  const type = checkFileType(name, input.mimeType)
+  const type = checkFileType(name, input.mimeType, undefined, options)
   if (!type.ok) throw new ApiError('unsupported_media_type', type.reason)
   await assertCanStore(project, input.size)
 
@@ -193,7 +195,8 @@ export async function receiveChunk(
   }
 
   if (range.start === 0) {
-    const type = checkFileType(session.fileName, session.mimeType, chunk.subarray(0, 4096))
+    // Une session de fichier chiffré n'a pu s'ouvrir qu'avec le droit : le contrôle a eu lieu à l'ouverture.
+    const type = checkFileType(session.fileName, session.mimeType, chunk.subarray(0, 4096), { chiffre: true })
     if (!type.ok) {
       await abortUpload(project, publicId)
       throw new ApiError('unsupported_media_type', type.reason)

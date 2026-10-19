@@ -18,6 +18,12 @@ interface TypeRule {
   aliases: string[]
   /** Signatures compatibles. Vide : pas de signature fiable pour ce format. */
   signatures: Signature[]
+  /**
+   * Contenu chiffré par l'application cliente : ses octets ne ressemblent à
+   * rien de reconnaissable, ils ne sont donc ni vérifiés ni prévisualisés.
+   * Réservé aux appelants qui en ont reçu le droit (`files:upload-encrypted`).
+   */
+  chiffre?: boolean
 }
 
 type Signature =
@@ -63,9 +69,13 @@ export const FILE_TYPES: Record<string, TypeRule> = {
   m4v: { category: 'video', mime: 'video/x-m4v', aliases: ['video/mp4'], signatures: ['mp4'] },
   pdf: { category: 'document', mime: 'application/pdf', aliases: [], signatures: ['pdf'] },
   txt: { category: 'document', mime: 'text/plain', aliases: [], signatures: ['text', 'svg'] },
+  // Fichier chiffré de bout en bout par l'application (UniChat) : le service
+  // le garde et le rend tel quel, sans pouvoir ni devoir le lire.
+  bin: { category: 'document', mime: 'application/octet-stream', aliases: [], signatures: [], chiffre: true },
 }
 
-export const ACCEPTED_EXTENSIONS = Object.keys(FILE_TYPES)
+/** Extensions proposées dans le tableau de bord : un fichier chiffré ne s'y dépose pas à la main. */
+export const ACCEPTED_EXTENSIONS = Object.keys(FILE_TYPES).filter((extension) => !FILE_TYPES[extension].chiffre)
 
 /** Valeur de l'attribut `accept` d'un champ de fichier. */
 export const ACCEPT_ATTRIBUTE = ACCEPTED_EXTENSIONS.map((ext) => `.${ext}`).join(',')
@@ -159,6 +169,7 @@ export function checkFileType(
   fileName: string,
   declaredMime: string | null | undefined,
   head?: Uint8Array,
+  options: { chiffre?: boolean } = {},
 ): TypeCheck {
   const extension = extensionOf(fileName)
   const rule = FILE_TYPES[extension]
@@ -168,6 +179,13 @@ export function checkFileType(
 
   const declared = (declaredMime ?? '').split(';')[0].trim().toLowerCase()
   const generic = declared === '' || declared === 'application/octet-stream'
+
+  // Fichier chiffré : pas de signature à reconnaître, mais un droit à détenir.
+  if (rule.chiffre) {
+    if (!options.chiffre) return { ok: false, reason: 'Fichier chiffré : cette clé n’a pas le droit d’en téléverser.' }
+    if (!generic) return { ok: false, reason: 'Un fichier chiffré s’annonce en application/octet-stream.' }
+    return { ok: true, extension, mimeType: rule.mime, category: rule.category }
+  }
   if (!generic && declared !== rule.mime && !rule.aliases.includes(declared)) {
     return { ok: false, reason: `Le type annoncé (${declared}) ne correspond pas à l'extension .${extension}.` }
   }

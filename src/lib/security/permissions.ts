@@ -8,6 +8,7 @@
 export const PERMISSIONS = [
   'files:read',
   'files:upload',
+  'files:upload-encrypted',
   'files:update',
   'files:delete',
   'stream:read',
@@ -28,6 +29,7 @@ export type Permission = (typeof PERMISSIONS)[number]
 export const PERMISSION_LABELS: Record<Permission, string> = {
   'files:read': 'Lire la liste et les métadonnées des fichiers',
   'files:upload': 'Téléverser des fichiers',
+  'files:upload-encrypted': 'Téléverser des fichiers chiffrés (contenu non vérifiable)',
   'files:update': 'Renommer et déplacer des fichiers',
   'files:delete': 'Mettre à la corbeille et supprimer',
   'stream:read': 'Diffuser en lecture continue',

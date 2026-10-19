@@ -57,7 +57,7 @@ export const POST = handle(async (request: Request) => {
     fileName: file.name,
     declaredMime: file.type,
     data: new Uint8Array(await file.arrayBuffer()),
-  })
+  }, { chiffre: ctx.can('files:upload-encrypted') })
   return ok({ file: fileDto(stored) }, { status: 201 })
 })
 

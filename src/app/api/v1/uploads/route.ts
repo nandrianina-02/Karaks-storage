@@ -17,7 +17,7 @@ export const POST = handle(async (request: Request) => {
   const ctx = await authenticate(request)
   ctx.require('files:upload')
   const input = createUploadInput.parse(await readJson(request))
-  const { session, uploadUrl } = await createUpload(ctx.project, ctx.actor, input)
+  const { session, uploadUrl } = await createUpload(ctx.project, ctx.actor, input, { chiffre: ctx.can('files:upload-encrypted') })
   return ok(
     {
       upload: uploadDto(session, 0),

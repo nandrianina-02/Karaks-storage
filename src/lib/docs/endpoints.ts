@@ -131,7 +131,7 @@ export const SECTIONS: Section[] = [
     id: 'televersement',
     title: 'Téléversement',
     intro:
-      'Envoi simple pour les petits fichiers (4 Mo), envoi reprenable au-delà ou sur un réseau instable. Le contenu réel du fichier est vérifié : un fichier dont les octets ne correspondent pas à l’extension est refusé (415).',
+      'Envoi simple pour les petits fichiers (4 Mo), envoi reprenable au-delà ou sur un réseau instable. Le contenu réel du fichier est vérifié : un fichier dont les octets ne correspondent pas à l’extension est refusé (415). Seule exception, le fichier chiffré par l’application (extension .bin, application/octet-stream) : accepté sans vérification pour les clés qui ont le droit « Téléverser des fichiers chiffrés », servi tel quel et jamais prévisualisé.',
     endpoints: [
       {
         id: 'upload',
