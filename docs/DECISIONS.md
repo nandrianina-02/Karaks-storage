@@ -27,7 +27,10 @@ du cahier des charges sont citées « CDS n ».
 ## Points ouverts
 
 - **Hébergement** : un serveur Node permanent est nécessaire (décision 7).
-  Railway convient ; à choisir.
+  Retenu en octobre 2026 : une machine « Always Free » d'Oracle Cloud
+  (10 To de trafic sortant par mois), avec Docker et Caddy
+  (`deploy/oracle/`, guide `docs/DEPLOIEMENT_ORACLE.md`). Sur Vercel, le
+  relais des octets avait dépassé les 10 Go mensuels de l'offre gratuite.
 - **Bande passante** : chaque écoute passe deux fois par le réseau du serveur
   (Drive vers serveur, serveur vers auditeur). À surveiller dans Analytics
   avant d'ouvrir Karaks à un large public.

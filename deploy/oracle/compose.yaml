@@ -1,0 +1,49 @@
+# Karaks Storage, Caddy (HTTPS automatique) et la tâche de nuit.
+# À lancer depuis ce dossier : docker compose up -d --build
+# Le domaine est lu dans deploy/oracle/.env (DOMAINE=…), les secrets dans
+# .env.production à la racine du dépôt.
+
+services:
+  nuvora:
+    build: ../..
+    env_file: ../../.env.production
+    restart: unless-stopped
+    expose:
+      - "3200"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3200/api/v1/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - nuvora
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAINE: ${DOMAINE:?Renseigner DOMAINE dans deploy/oracle/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Ce que faisait la tâche planifiée de Vercel (vercel.json) : chaque nuit à 2 h 30 UTC.
+  maintenance:
+    image: alpine:3.20
+    restart: unless-stopped
+    depends_on:
+      - nuvora
+    env_file: ../../.env.production
+    volumes:
+      - ./maintenance.sh:/maintenance.sh:ro
+    # crond ne transmet pas l'environnement aux tâches : le secret est écrit dans la table au démarrage du conteneur.
+    command: ["/bin/sh", "-c", "echo \"30 2 * * * CRON_SECRET='$${CRON_SECRET}' /bin/sh /maintenance.sh\" > /etc/crontabs/root && exec crond -f -l 8"]
+
+volumes:
+  caddy_data:
+  caddy_config:

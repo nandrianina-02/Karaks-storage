@@ -1,0 +1,11 @@
+# Certificat Let's Encrypt obtenu et renouvelé seul pour {$DOMAINE}.
+{$DOMAINE} {
+	# Un envoi peut aller jusqu'à STORAGE_MAX_FILE_SIZE (500 Mo par défaut).
+	request_body {
+		max_size 600MB
+	}
+	reverse_proxy nuvora:3200 {
+		# L'audio part au fil de l'eau, sans attendre que le tampon se remplisse.
+		flush_interval -1
+	}
+}

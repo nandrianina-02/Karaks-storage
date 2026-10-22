@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+storage-data
+src/generated
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+docs/*.docx
