@@ -81,8 +81,12 @@ export async function placerFichier(
   taille: number,
   parentId: string | null,
 ): Promise<Placement> {
-  if (!(await auDelaDuSeuil(project.provider, taille))) return { provider: project.provider, parentId }
+  const propre = await espace(project.provider)
+  if (propre && !depasseSeuil(propre, taille)) return { provider: project.provider, parentId }
 
+  // Un stockage dont on ne lit pas l'espace (accès illisibles, compte
+  // déconnecté chez Google) refuserait l'envoi : un autre stockage relié le
+  // reçoit, comme pour un compte plein.
   const autre = await meilleurAutre(project.provider.id, taille)
   if (!autre) {
     // Aucun autre stockage n'a de place : on reste, tant que le compte n'est
@@ -93,7 +97,8 @@ export async function placerFichier(
     }
     return { provider: project.provider, parentId }
   }
-  await annoncerBascule(project.provider, autre)
+  // L'alerte parle d'un compte à 80 % : elle n'a pas lieu d'être pour un stockage illisible.
+  if (propre) await annoncerBascule(project.provider, autre)
   return { provider: autre, parentId: await dossierDuProjet(project, autre) }
 }
 
