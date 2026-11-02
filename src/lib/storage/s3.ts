@@ -106,9 +106,15 @@ export class S3Provider implements StorageProvider {
 
   private async call(url: string, init: RequestInit & { allow404?: boolean } = {}): Promise<Response | null> {
     const { allow404, ...rest } = init
+    // La taille du corps, posée explicitement. Le `fetch` remplacé par Next.js
+    // peut transmettre le corps en flux : sans taille annoncée, il part en
+    // morceaux (chunked), et S3 refuse l'objet (MissingContentLength).
+    const headers = new Headers(rest.headers)
+    if (typeof rest.body === 'string') headers.set('Content-Length', String(Buffer.byteLength(rest.body)))
+    else if (rest.body instanceof Uint8Array) headers.set('Content-Length', String(rest.body.byteLength))
     let response: Response
     try {
-      response = await this.client.fetch(url, rest)
+      response = await this.client.fetch(url, { ...rest, headers })
     } catch (error) {
       throw new ProviderError(`Stockage S3 injoignable : ${error instanceof Error ? error.message : 'erreur réseau'}`, 503)
     }
