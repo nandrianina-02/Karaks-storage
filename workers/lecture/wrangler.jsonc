@@ -26,6 +26,7 @@
 		}
 	]
 	// Secrets (npx wrangler secret put <NOM>) : API_SECRET, ENCRYPTION_KEY,
-	// GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, et GOOGLE_REFRESH_TOKEN seulement
-	// si l'application s'en sert encore. DATABASE_URL ne sert que sans Hyperdrive.
+	// GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET ; ENCRYPTION_KEY_SECONDAIRE si des
+	// identifiants ont été chiffrés avec une autre clé ; GOOGLE_REFRESH_TOKEN
+	// seulement si l'application s'en sert encore. DATABASE_URL ne sert que sans Hyperdrive.
 }
