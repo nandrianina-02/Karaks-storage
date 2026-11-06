@@ -11,3 +11,6 @@ next-env.d.ts
 /storage-data/
 npm-debug.log*
 .DS_Store
+
+# Worker de lecture
+.wrangler/

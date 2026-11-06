@@ -120,6 +120,13 @@ quand le trafic grandit : pas de plafond de durée ni de taille par requête.
 `ENCRYPTION_KEY` ne doit plus changer après la connexion de Drive : le jeton
 enregistré deviendrait illisible, et il faudrait reconnecter Drive.
 
+### Lecture par Cloudflare
+
+Sur Vercel, l'écoute épuise vite le transfert gratuit et fait désactiver le
+déploiement. Le Worker `workers/lecture` sert la lecture depuis Cloudflare,
+sans plafond de transfert, et relaie tout le reste à l'application. Voir
+[docs/LECTURE_CLOUDFLARE.md](docs/LECTURE_CLOUDFLARE.md).
+
 ## Sécurité, en bref
 
 - Aucun identifiant du fournisseur ne sort par l'API (`src/lib/api/serialize.ts`).

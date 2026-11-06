@@ -1,0 +1,20 @@
+{
+  "name": "karaks-lecture",
+  "private": true,
+  "description": "Worker Cloudflare qui sert la lecture des fichiers de Karaks Storage depuis Google Drive",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "postgres": "3.4.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261104.1",
+    "wrangler": "^4.158.0"
+  }
+}

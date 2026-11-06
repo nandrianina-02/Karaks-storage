@@ -1,0 +1,17 @@
+{
+  // Worker de lecture de Karaks Storage : voir src/index.ts.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "karaks-lecture",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-01",
+  // Pour la bibliothèque postgres (sockets TCP vers Supabase).
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    // L'application Karaks Storage : tout ce qui n'est pas la lecture lui est relayé.
+    "ORIGINE": "https://moziik-cloud.vercel.app"
+  }
+  // Secrets (npx wrangler secret put <NOM>) : DATABASE_URL, API_SECRET,
+  // ENCRYPTION_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, et
+  // GOOGLE_REFRESH_TOKEN seulement si l'application s'en sert encore.
+}
