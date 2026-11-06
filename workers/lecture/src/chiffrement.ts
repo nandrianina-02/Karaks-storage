@@ -56,6 +56,25 @@ export async function dechiffrer(valeur: string, secret: string): Promise<string
   return decodeur.decode(clair)
 }
 
+/**
+ * Essaie chaque clé à tour de rôle. La base peut contenir des identifiants
+ * chiffrés par deux déploiements différents de l'application (celui de
+ * production, et un serveur lancé en local avec une autre ENCRYPTION_KEY pour
+ * de gros imports) : le Worker doit lire les deux.
+ */
+export async function dechiffrerAvec(valeur: string, cles: (string | undefined)[]): Promise<string> {
+  let derniere: unknown = new Error('Aucune clé de chiffrement configurée.')
+  for (const cle of cles) {
+    if (!cle) continue
+    try {
+      return await dechiffrer(valeur, cle)
+    } catch (e) {
+      derniere = e
+    }
+  }
+  throw derniere
+}
+
 /** Ce qu'un jeton de lecture sait du fichier à servir. */
 export interface Lecture {
   /** Identifiant interne du fichier (base), pour les compteurs. */

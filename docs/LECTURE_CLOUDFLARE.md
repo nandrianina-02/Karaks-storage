@@ -74,6 +74,13 @@ Drive n'a pas de jeton enregistré en base. `DATABASE_URL` ne sert que sans
 Hyperdrive ; une fois Hyperdrive en place, le secret peut être retiré
 (`npx wrangler secret delete DATABASE_URL`).
 
+**Clé secondaire.** Si un fournisseur a été relié depuis un Karaks Storage
+lancé avec une autre `ENCRYPTION_KEY` (serveur local pour de gros imports),
+ses identifiants ne se déchiffrent qu'avec cette autre clé : le Worker répond
+alors 500 (« Decryption failed » au journal). La donner en
+`ENCRYPTION_KEY_SECONDAIRE` ; le Worker essaie les deux. L'application,
+elle, ne lit ces fournisseurs qu'avec sa propre clé.
+
 Le Worker répond à `https://karaks-lecture.<sous-domaine>.workers.dev`.
 Vérification : `/sante` doit répondre `{"ok":true}`.
 

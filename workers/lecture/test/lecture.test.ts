@@ -3,7 +3,7 @@ import { beforeEach, describe, it } from 'node:test'
 
 import { encrypt, hashSecret } from '../../../src/lib/security/crypto'
 import { adressePostgres, type Base, type CleApi, type Fichier } from '../src/base'
-import { chiffrerLecture, dechiffrer, empreinte, lireLecture, type Lecture } from '../src/chiffrement'
+import { chiffrerLecture, dechiffrer, dechiffrerAvec, empreinte, lireLecture, type Lecture } from '../src/chiffrement'
 import { oublierJetons } from '../src/drive'
 import { creerLecteur, type Env } from '../src/index'
 
@@ -21,6 +21,13 @@ describe('compatibilité avec l’application', () => {
   it('relit une valeur chiffrée par src/lib/security/crypto.ts', async () => {
     const chiffre = encrypt('jeton-de-rafraichissement-google', ENV.ENCRYPTION_KEY)
     assert.equal(await dechiffrer(chiffre, ENV.ENCRYPTION_KEY), 'jeton-de-rafraichissement-google')
+  })
+
+  it('relit avec la clé secondaire ce que la première ne déchiffre pas', async () => {
+    const chiffre = encrypt('jeton-relie-en-local', 'cle-du-serveur-local-0123456789abcdefgh')
+    await assert.rejects(dechiffrerAvec(chiffre, [ENV.ENCRYPTION_KEY]))
+    assert.equal(await dechiffrerAvec(chiffre, [ENV.ENCRYPTION_KEY, 'cle-du-serveur-local-0123456789abcdefgh']), 'jeton-relie-en-local')
+    assert.equal(await dechiffrerAvec(encrypt('ok', ENV.ENCRYPTION_KEY), [ENV.ENCRYPTION_KEY, undefined]), 'ok')
   })
 
   it('calcule la même empreinte de clé API', async () => {

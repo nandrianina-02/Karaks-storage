@@ -1,6 +1,6 @@
 import { parseRange } from '../../../src/lib/files/range'
 import { ouvrirBase, type Base, type CleApi } from './base'
-import { chiffrerLecture, dechiffrer, empreinte, lireLecture, type Lecture } from './chiffrement'
+import { chiffrerLecture, dechiffrerAvec, empreinte, lireLecture, type Lecture } from './chiffrement'
 import { ErreurLecture, lireDrive } from './drive'
 import { configS3, lireS3, type ConfigS3, type IdentifiantsS3 } from './s3'
 
@@ -32,6 +32,12 @@ export interface Env {
   DATABASE_URL?: string
   API_SECRET: string
   ENCRYPTION_KEY: string
+  /**
+   * Autre clé avec laquelle des identifiants ont pu être chiffrés en base (un
+   * fournisseur relié depuis un Karaks Storage lancé en local). Ne sert qu'à
+   * relire ; les jetons de lecture du Worker utilisent ENCRYPTION_KEY.
+   */
+  ENCRYPTION_KEY_SECONDAIRE?: string
   GOOGLE_CLIENT_ID: string
   GOOGLE_CLIENT_SECRET: string
   /** Ancien réglage unique de Drive, pour un fournisseur sans jeton en base. */
@@ -44,6 +50,8 @@ export interface Dependances {
   base: (env: Env) => Base
   recuperer: typeof fetch
 }
+
+const clesDe = (env: Env) => [env.ENCRYPTION_KEY, env.ENCRYPTION_KEY_SECONDAIRE]
 
 const API_KEY_PATTERN = /^ks_(live|test)_[0-9A-Za-z]{32,64}$/
 const MIN_TTL = 30
@@ -176,7 +184,7 @@ async function accesS3(fournisseur: string, env: Env, base: () => Base) {
   const f = await base().fournisseur(fournisseur)
   const config = configS3(f?.config)
   if (!f?.identifiants || !config) throw new ErreurLecture('Le stockage S3 n’est pas configuré.', 503)
-  const valeur = { config, identifiants: JSON.parse(await dechiffrer(f.identifiants, env.ENCRYPTION_KEY)) as IdentifiantsS3 }
+  const valeur = { config, identifiants: JSON.parse(await dechiffrerAvec(f.identifiants, clesDe(env))) as IdentifiantsS3 }
   accesS3Garde.set(fournisseur, { valeur, jusqua: Date.now() + 10 * 60_000 })
   return valeur
 }
@@ -236,7 +244,7 @@ async function servir(requete: Request, env: Env, deps: Dependances, base: () =>
             recuperer: deps.recuperer,
             rafraichissement: async () => {
               const f = await base().fournisseur(lecture.fournisseur)
-              const jetonGoogle = f?.identifiants ? await dechiffrer(f.identifiants, env.ENCRYPTION_KEY) : env.GOOGLE_REFRESH_TOKEN
+              const jetonGoogle = f?.identifiants ? await dechiffrerAvec(f.identifiants, clesDe(env)) : env.GOOGLE_REFRESH_TOKEN
               if (!jetonGoogle) throw new ErreurLecture('Google Drive n’est pas connecté.', 503)
               return jetonGoogle
             },
