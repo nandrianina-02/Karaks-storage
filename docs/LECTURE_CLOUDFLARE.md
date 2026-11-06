@@ -17,7 +17,7 @@ Vercel pour tout le reste (téléversements, dossiers, administration).
 | Requête | Traitement |
 |---|---|
 | `POST /api/v1/files/:id/signed-url` | Même contrat que l'application. Vérifie la clé API et ses permissions dans la base, puis rend un lien `/l/<jeton>` vers le Worker. |
-| `GET` / `HEAD /l/<jeton>` | Sert le fichier par plages, depuis Google Drive. |
+| `GET` / `HEAD /l/<jeton>` | Sert le fichier par plages, depuis Google Drive ou un stockage compatible S3 (R2, B2…). |
 | `GET /api/v1/files/:id`, `GET /api/v1/folders` (racine) | Informations d'un fichier et dossiers racine, lus dans la base : un client en a besoin pour afficher une image (Moziik : `/media`). |
 | `GET /sante` | `{ "ok": true }`. |
 | Tout le reste | Relayé tel quel à `ORIGINE` (l'application). |
@@ -30,7 +30,7 @@ suivantes ne la touchent pas.
 
 Restent servis par l'application :
 - les liens à usage compté (`maxUses`), qui ont besoin de leur ligne en base ;
-- les fichiers d'un fournisseur autre que Google Drive.
+- les fichiers du disque local de développement.
 
 Différences avec l'application :
 - un lien du Worker ne se révoque pas un par un : il expire à son heure, et

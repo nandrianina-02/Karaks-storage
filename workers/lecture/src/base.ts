@@ -59,8 +59,12 @@ export interface Base {
   /** Un fichier mis à la corbeille ne se lit plus, même par un jeton encore valable. */
   fichierActif(id: string): Promise<boolean>
   compterOuverture(id: string, telechargement: boolean): Promise<void>
-  /** Jeton Google chiffré du fournisseur ; null s'il n'en a pas (repli sur GOOGLE_REFRESH_TOKEN). */
-  fournisseur(id: string): Promise<{ type: string; identifiants: string | null } | null>
+  /**
+   * Le fournisseur : son type, ses identifiants chiffrés (jeton Google, ou
+   * clés S3 en JSON ; null pour un Drive qui se replie sur
+   * GOOGLE_REFRESH_TOKEN) et ses réglages (point d'accès S3).
+   */
+  fournisseur(id: string): Promise<{ type: string; identifiants: string | null; config: unknown } | null>
   fermer(): Promise<void>
 }
 
@@ -158,9 +162,9 @@ export function ouvrirBase(adresse: string, viaHyperdrive = false): Base {
     },
 
     async fournisseur(id) {
-      const [l] = await sql<{ type: string; identifiants: string | null }[]>`
-        SELECT kind::text AS type, credentials AS identifiants FROM storage_providers WHERE id = ${id}`
-      return l ?? null
+      const [l] = await sql<{ type: string; identifiants: string | null; config: string | null }[]>`
+        SELECT kind::text AS type, credentials AS identifiants, config::text AS config FROM storage_providers WHERE id = ${id}`
+      return l ? { type: l.type, identifiants: l.identifiants, config: l.config ? (JSON.parse(l.config) as unknown) : null } : null
     },
 
     fermer: () => sql.end({ timeout: 2 }),

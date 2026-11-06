@@ -1,7 +1,8 @@
 import { parseRange } from '../../../src/lib/files/range'
 import { ouvrirBase, type Base, type CleApi } from './base'
 import { chiffrerLecture, dechiffrer, empreinte, lireLecture, type Lecture } from './chiffrement'
-import { ErreurDrive, lireDrive } from './drive'
+import { ErreurLecture, lireDrive } from './drive'
+import { configS3, lireS3, type ConfigS3, type IdentifiantsS3 } from './s3'
 
 /**
  * Worker de lecture de Karaks Storage.
@@ -16,11 +17,12 @@ import { ErreurDrive, lireDrive } from './drive'
  * - POST /api/v1/files/:id/signed-url : même contrat que l'application. Le
  *   lien rendu pointe vers ce Worker (/l/<jeton>) ; le jeton chiffré porte
  *   le fichier à servir, sans ligne en base.
- * - GET|HEAD /l/<jeton> : sert le fichier par plages, depuis Google Drive.
+ * - GET|HEAD /l/<jeton> : sert le fichier par plages, depuis Google Drive
+ *   ou un stockage compatible S3.
  * - GET /api/v1/files/:id et GET /api/v1/folders (racine) : les lectures
  *   d'informations qu'un client fait avant d'afficher un fichier.
  * - tout le reste (téléversements, écritures, sous-dossiers, liens à usage
- *   compté, autres fournisseurs que Drive) est relayé tel quel à ORIGINE.
+ *   compté, disque local de développement) est relayé tel quel à ORIGINE.
  */
 
 export interface Env {
@@ -141,13 +143,15 @@ async function signer(requete: Request, env: Env, deps: Dependances, base: () =>
   const f = await base().fichier(k.projet.id, publicId)
   if (!f || !f.objet) return erreur(404, 'not_found', 'Fichier introuvable.')
   const fournisseur = await base().fournisseur(f.fournisseur)
-  // Seul Drive est lu ici ; un fichier ailleurs (S3, migration en cours) reste servi par l'application.
-  if (fournisseur?.type !== 'GOOGLE_DRIVE') return relayer(copie, env, deps.recuperer)
+  // Drive et S3 sont lus ici ; un autre fournisseur (disque local de développement) reste à l'application.
+  const genre = fournisseur?.type === 'GOOGLE_DRIVE' ? 'drive' : fournisseur?.type === 'S3' && configS3(fournisseur.config) ? 's3' : null
+  if (!genre) return relayer(copie, env, deps.recuperer)
 
   const expire = Date.now() + duree * 1000
   const lecture: Lecture = {
     fichier: f.id,
     fournisseur: f.fournisseur,
+    genre,
     objet: f.objet,
     taille: f.taille,
     type: f.type,
@@ -158,6 +162,23 @@ async function signer(requete: Request, env: Env, deps: Dependances, base: () =>
   }
   const url = `${new URL(requete.url).origin}/l/${await chiffrerLecture(lecture, env.ENCRYPTION_KEY)}`
   return Response.json({ success: true, url, expiresAt: new Date(expire).toISOString() }, { status: 201, headers: { 'Cache-Control': 'no-store' } })
+}
+
+/**
+ * Point d'accès et clés d'un fournisseur S3, gardés dix minutes en mémoire de
+ * l'isolat : sans cela, chaque plage d'une même lecture relirait la base.
+ */
+const accesS3Garde = new Map<string, { valeur: { config: ConfigS3; identifiants: IdentifiantsS3 }; jusqua: number }>()
+
+async function accesS3(fournisseur: string, env: Env, base: () => Base) {
+  const garde = accesS3Garde.get(fournisseur)
+  if (garde && garde.jusqua > Date.now()) return garde.valeur
+  const f = await base().fournisseur(fournisseur)
+  const config = configS3(f?.config)
+  if (!f?.identifiants || !config) throw new ErreurLecture('Le stockage S3 n’est pas configuré.', 503)
+  const valeur = { config, identifiants: JSON.parse(await dechiffrer(f.identifiants, env.ENCRYPTION_KEY)) as IdentifiantsS3 }
+  accesS3Garde.set(fournisseur, { valeur, jusqua: Date.now() + 10 * 60_000 })
+  return valeur
 }
 
 async function servir(requete: Request, env: Env, deps: Dependances, base: () => Base, ctx: ExecutionContext, jeton: string): Promise<Response> {
@@ -202,23 +223,27 @@ async function servir(requete: Request, env: Env, deps: Dependances, base: () =>
     ctx.waitUntil(base().compterOuverture(lecture.fichier, lecture.telechargement).catch((e) => console.warn('compteur non mis à jour :', String(e))))
   }
 
+  const morceau = plage.kind === 'partial' ? { start: debut, end: fin } : null
   try {
-    const source = await lireDrive({
-      fournisseur: lecture.fournisseur,
-      objet: lecture.objet,
-      plage: plage.kind === 'partial' ? { start: debut, end: fin } : null,
-      google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
-      recuperer: deps.recuperer,
-      rafraichissement: async () => {
-        const f = await base().fournisseur(lecture.fournisseur)
-        const jetonGoogle = f?.identifiants ? await dechiffrer(f.identifiants, env.ENCRYPTION_KEY) : env.GOOGLE_REFRESH_TOKEN
-        if (!jetonGoogle) throw new ErreurDrive('Google Drive n’est pas connecté.', 503)
-        return jetonGoogle
-      },
-    })
+    const source =
+      lecture.genre === 's3'
+        ? await lireS3({ ...(await accesS3(lecture.fournisseur, env, base)), objet: lecture.objet, plage: morceau, recuperer: deps.recuperer })
+        : await lireDrive({
+            fournisseur: lecture.fournisseur,
+            objet: lecture.objet,
+            plage: morceau,
+            google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
+            recuperer: deps.recuperer,
+            rafraichissement: async () => {
+              const f = await base().fournisseur(lecture.fournisseur)
+              const jetonGoogle = f?.identifiants ? await dechiffrer(f.identifiants, env.ENCRYPTION_KEY) : env.GOOGLE_REFRESH_TOKEN
+              if (!jetonGoogle) throw new ErreurLecture('Google Drive n’est pas connecté.', 503)
+              return jetonGoogle
+            },
+          })
     return new Response(source.body, { status: statut, headers: entetes })
   } catch (e) {
-    if (e instanceof ErreurDrive) {
+    if (e instanceof ErreurLecture) {
       console.warn('lecture refusée :', e.message)
       return erreur(e.statut, e.statut === 404 ? 'not_found' : 'storage_unavailable', e.statut === 404 ? 'Fichier absent du stockage.' : 'Le stockage est momentanément indisponible.', {
         'Retry-After': '5',

@@ -60,8 +60,9 @@ export async function dechiffrer(valeur: string, secret: string): Promise<string
 export interface Lecture {
   /** Identifiant interne du fichier (base), pour les compteurs. */
   fichier: string
-  /** Fournisseur qui détient le fichier, et l'identifiant chez lui. */
+  /** Fournisseur qui détient le fichier, son type, et l'identifiant chez lui. */
   fournisseur: string
+  genre: 'drive' | 's3'
   objet: string
   taille: number
   type: string

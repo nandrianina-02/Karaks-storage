@@ -13,7 +13,7 @@ export interface IdentifiantsGoogle {
   clientSecret: string
 }
 
-export class ErreurDrive extends Error {
+export class ErreurLecture extends Error {
   constructor(
     message: string,
     readonly statut: number,
@@ -52,7 +52,7 @@ async function jetonAcces(
   if (!reponse.ok || !corps.access_token) {
     // Accès retiré ou application Google restée en mode test : l'application
     // Next.js le signalera dans ses réglages ; ici, on ne peut que refuser.
-    throw new ErreurDrive(`Google a refusé le renouvellement d'accès (${corps.error ?? reponse.status}).`, 503)
+    throw new ErreurLecture(`Google a refusé le renouvellement d'accès (${corps.error ?? reponse.status}).`, 503)
   }
   jetons.set(fournisseur, { valeur: corps.access_token, jusqua: Date.now() + (corps.expires_in ?? 3600) * 1000 })
   return corps.access_token
@@ -78,9 +78,9 @@ export async function lireDrive(options: {
     const reponse = await recuperer(`${API}/files/${encodeURIComponent(options.objet)}?alt=media`, { headers: entetes })
     if (reponse.status === 401 && essai === 0) continue
     if (reponse.ok) return reponse
-    if (reponse.status === 404) throw new ErreurDrive('Fichier absent du stockage.', 404)
+    if (reponse.status === 404) throw new ErreurLecture('Fichier absent du stockage.', 404)
     // 403 « userRateLimitExceeded », 5xx : passager, le lecteur réessaiera.
-    throw new ErreurDrive(`Google Drive a répondu ${reponse.status}.`, 503)
+    throw new ErreurLecture(`Google Drive a répondu ${reponse.status}.`, 503)
   }
-  throw new ErreurDrive('Google Drive refuse l’accès.', 503)
+  throw new ErreurLecture('Google Drive refuse l’accès.', 503)
 }

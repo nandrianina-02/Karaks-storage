@@ -36,6 +36,7 @@ describe('compatibilité avec l’application', () => {
 const LECTURE: Lecture = {
   fichier: 'f1',
   fournisseur: 'p1',
+  genre: 'drive',
   objet: 'drive-123',
   taille: 1000,
   type: 'audio/mpeg',
@@ -98,12 +99,25 @@ function banc(options: { permissions?: string[]; actif?: boolean; type?: string 
     dossiersRacine: async () => [{ id: 'fld_songs', name: 'songs', createdAt: '2026-10-20T10:00:00.000Z', updatedAt: '2026-10-20T10:00:00.000Z' }],
     fichierActif: async () => options.actif ?? true,
     compterOuverture: async (id) => void comptes.push(id),
-    fournisseur: async () => ({ type: options.type ?? 'GOOGLE_DRIVE', identifiants: encrypt('rafraichissement', ENV.ENCRYPTION_KEY) }),
+    fournisseur: async () =>
+      options.type === 'S3'
+        ? {
+            type: 'S3',
+            identifiants: encrypt(JSON.stringify({ accessKeyId: 'AKIAESSAI', secretAccessKey: 'secret-s3' }), ENV.ENCRYPTION_KEY),
+            config: { endpoint: 'https://s3.exemple', bucket: 'moziik', region: 'auto' },
+          }
+        : { type: options.type ?? 'GOOGLE_DRIVE', identifiants: encrypt('rafraichissement', ENV.ENCRYPTION_KEY), config: null },
     fermer: async () => void (fermetures += 1),
   })
   const recuperer = (async (entree: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(entree)
+    // aws4fetch passe une Request déjà signée ; les autres appels, une adresse et des options.
+    const url = entree instanceof Request ? entree.url : String(entree)
+    if (entree instanceof Request) init = { headers: entree.headers, method: entree.method }
     appels.push({ url, init })
+    if (url.startsWith('https://s3.exemple/moziik/')) {
+      const plage = new Headers(init?.headers).get('range')
+      return new Response('y'.repeat(plage ? 100 : 1000), { status: plage ? 206 : 200 })
+    }
     if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'acces-1', expires_in: 3600 })
     if (url.startsWith('https://www.googleapis.com/drive/v3/files/drive-123')) {
       const plage = new Headers(init?.headers).get('range')
@@ -235,6 +249,21 @@ describe('Worker de lecture', () => {
     assert.equal((await b.requete('/api/v1/folders')).status, 401)
   })
 
+  it('sert aussi un fichier rangé chez un fournisseur S3, signé comme par l’application', async () => {
+    const b = banc({ type: 'S3' })
+    await b.pret()
+    const { url } = (await (await b.requete('/api/v1/files/file_abc/signed-url', demander({}))).json()) as { url: string }
+    const r = await b.requete(new URL(url).pathname, { headers: { Range: 'bytes=0-99' } })
+    assert.equal(r.status, 206)
+    assert.equal(await r.text(), 'y'.repeat(100))
+    const versS3 = b.appels.filter((a) => a.url.startsWith('https://s3.exemple/'))
+    assert.equal(versS3.length, 1)
+    assert.equal(versS3[0]!.url, 'https://s3.exemple/moziik/drive-123')
+    const entetes = new Headers(versS3[0]!.init?.headers)
+    assert.equal(entetes.get('range'), 'bytes=0-99')
+    assert.match(entetes.get('authorization') ?? '', /^AWS4-HMAC-SHA256 Credential=AKIAESSAI\//)
+  })
+
   it('relaie à l’application le reste : autres routes, liens à usage compté, autres fournisseurs', async () => {
     const b = banc()
     await b.pret()
@@ -243,8 +272,8 @@ describe('Worker de lecture', () => {
     assert.equal(b.appels.at(-1)!.url, 'https://stockage.exemple/api/v1/folders?parentId=fld_1')
     assert.equal((await b.requete('/api/v1/folders', demander({ name: 'images' }))).status, 299)
     assert.equal((await b.requete('/api/v1/files/file_abc/signed-url', demander({ maxUses: 1 }))).status, 299)
-    const s3 = banc({ type: 'S3' })
-    await s3.pret()
-    assert.equal((await s3.requete('/api/v1/files/file_abc/signed-url', demander({}))).status, 299)
+    const local = banc({ type: 'LOCAL' })
+    await local.pret()
+    assert.equal((await local.requete('/api/v1/files/file_abc/signed-url', demander({}))).status, 299)
   })
 })
