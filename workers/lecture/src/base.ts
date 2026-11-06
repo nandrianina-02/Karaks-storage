@@ -78,12 +78,25 @@ export function adressePostgres(adresse: string): string {
 
 /**
  * Une connexion par requête : un Worker ne peut pas garder une socket d'une
- * requête à l'autre. `prepare: false` pour le pooler de Supabase en mode
- * transaction ; `fetch_types: false` évite une requête de plus à chaque
- * connexion (les tableaux sont lus en JSON).
+ * requête à l'autre. `fetch_types: false` évite une requête de plus à chaque
+ * connexion (les tableaux sont lus en JSON) ; `prepare: false` reste
+ * compatible avec un pooler en mode transaction.
+ *
+ * Par Hyperdrive (`viaHyperdrive`), la connexion locale n'est pas chiffrée :
+ * c'est Hyperdrive qui tient le TLS jusqu'à Supabase. En direct, le TLS est
+ * négocié par le Worker ; c'est ce qui échouait en production, et une
+ * connexion fermée pendant son ouverture fait se reconnecter la bibliothèque
+ * sans fin, jusqu'à la limite de sous-requêtes du Worker.
  */
-export function ouvrirBase(adresse: string): Base {
-  const sql = postgres(adressePostgres(adresse), { max: 1, prepare: false, fetch_types: false, idle_timeout: 5, connect_timeout: 10, ssl: 'require' })
+export function ouvrirBase(adresse: string, viaHyperdrive = false): Base {
+  const sql = postgres(adressePostgres(adresse), {
+    max: 1,
+    prepare: false,
+    fetch_types: false,
+    idle_timeout: 5,
+    connect_timeout: 10,
+    ...(viaHyperdrive ? {} : { ssl: 'require' as const }),
+  })
   return {
     async cleApi(empreinte) {
       const [l] = await sql<

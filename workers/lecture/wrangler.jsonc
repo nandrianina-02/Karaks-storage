@@ -1,17 +1,22 @@
 {
-  // Worker de lecture de Karaks Storage : voir src/index.ts.
+  // Worker de lecture de Karaks Storage : voir src/index.ts et docs/LECTURE_CLOUDFLARE.md.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "karaks-lecture",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-01",
-  // Pour la bibliothèque postgres (sockets TCP vers Supabase).
+  // Pour la bibliothèque postgres (sockets TCP).
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": {
     // L'application Karaks Storage : tout ce qui n'est pas la lecture lui est relayé.
     "ORIGINE": "https://moziik-cloud.vercel.app"
-  }
-  // Secrets (npx wrangler secret put <NOM>) : DATABASE_URL, API_SECRET,
-  // ENCRYPTION_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, et
-  // GOOGLE_REFRESH_TOKEN seulement si l'application s'en sert encore.
+  },
+  // Accès à Supabase par Hyperdrive : Cloudflare tient la connexion chiffrée
+  // et la réserve de connexions. Créé une fois avec
+  //   npx wrangler hyperdrive create karaks-base --connection-string="<pooler Supabase, port 5432>"
+  // puis l'identifiant affiché est reporté ici.
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "A_REMPLACER" }]
+  // Secrets (npx wrangler secret put <NOM>) : API_SECRET, ENCRYPTION_KEY,
+  // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, et GOOGLE_REFRESH_TOKEN seulement
+  // si l'application s'en sert encore. DATABASE_URL ne sert que sans Hyperdrive.
 }

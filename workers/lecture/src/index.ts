@@ -24,7 +24,10 @@ import { ErreurDrive, lireDrive } from './drive'
  */
 
 export interface Env {
-  DATABASE_URL: string
+  /** Accès à Supabase par Cloudflare Hyperdrive : la voie à utiliser (voir docs/LECTURE_CLOUDFLARE.md). */
+  HYPERDRIVE?: Hyperdrive
+  /** Connexion directe, seulement sans Hyperdrive. */
+  DATABASE_URL?: string
   API_SECRET: string
   ENCRYPTION_KEY: string
   GOOGLE_CLIENT_ID: string
@@ -254,4 +257,10 @@ export function creerLecteur(deps: Dependances) {
   }
 }
 
-export default creerLecteur({ base: (env) => ouvrirBase(env.DATABASE_URL), recuperer: (entree, init) => fetch(entree, init) })
+function baseDe(env: Env): Base {
+  if (env.HYPERDRIVE) return ouvrirBase(env.HYPERDRIVE.connectionString, true)
+  if (env.DATABASE_URL) return ouvrirBase(env.DATABASE_URL)
+  throw new Error('Base non configurée : ni HYPERDRIVE ni DATABASE_URL.')
+}
+
+export default creerLecteur({ base: baseDe, recuperer: (entree, init) => fetch(entree, init) })

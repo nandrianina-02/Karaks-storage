@@ -45,7 +45,7 @@ Depuis `workers/lecture` :
 ```bash
 npm install
 npx wrangler login              # une fois, compte Cloudflare (celui de Mess)
-npx wrangler secret put DATABASE_URL          # la même que l'application (Supabase)
+npx wrangler hyperdrive create karaks-base --connection-string="<adresse Supabase, port 5432>"
 npx wrangler secret put API_SECRET            # la même que l'application
 npx wrangler secret put ENCRYPTION_KEY        # la même que l'application
 npx wrangler secret put GOOGLE_CLIENT_ID      # le même client OAuth que l'application
@@ -53,10 +53,26 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 npm run deploy
 ```
 
-Les cinq valeurs sont celles du déploiement Vercel qui sert la production
+**Hyperdrive.** L'adresse à donner est celle de `DATABASE_URL` de
+l'application, avec deux changements : le port `5432` (pooler Supabase en
+mode session) au lieu de `6543`, et sans `?pgbouncer=true`. La commande
+vérifie la connexion et affiche un identifiant : il remplace `A_REMPLACER`
+dans `wrangler.jsonc`.
+
+Pourquoi Hyperdrive : en connexion directe, le Worker doit négocier lui-même
+le chiffrement avec Supabase. En production, cette négociation échouait, et la
+bibliothèque postgres se reconnectait alors sans fin, jusqu'à la limite de
+50 sous-requêtes par requête du Worker (« Too many subrequests »). Avec
+Hyperdrive, Cloudflare tient la connexion chiffrée et la réserve de
+connexions ; le Worker n'ouvre qu'une connexion locale. Hyperdrive est inclus
+dans l'offre gratuite des Workers.
+
+Les secrets sont ceux du déploiement Vercel qui sert la production
 (`moziik-cloud`). Une valeur différente rend les clés API ou les connexions
 Drive illisibles. `GOOGLE_REFRESH_TOKEN` n'est utile que si un fournisseur
-Drive n'a pas de jeton enregistré en base.
+Drive n'a pas de jeton enregistré en base. `DATABASE_URL` ne sert que sans
+Hyperdrive ; une fois Hyperdrive en place, le secret peut être retiré
+(`npx wrangler secret delete DATABASE_URL`).
 
 Le Worker répond à `https://karaks-lecture.<sous-domaine>.workers.dev`.
 Vérification : `/sante` doit répondre `{"ok":true}`.
