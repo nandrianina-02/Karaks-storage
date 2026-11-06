@@ -25,8 +25,36 @@ export interface Fichier {
   taille: number
 }
 
+/** Ce que rend GET /api/v1/files/:id : le sous-ensemble de `fileDto` dont les clients se servent. */
+export interface InfosFichier {
+  id: string
+  name: string
+  extension: string
+  mimeType: string
+  size: number
+  checksum: string | null
+  folderId: string | null
+  status: string
+  durationSeconds: number | null
+  width: number | null
+  height: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Dossier {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Base {
   cleApi(empreinte: string): Promise<CleApi | null>
+  /** Fichier actif ou à la corbeille, comme `findFile(..., { includeTrashed: true })`. */
+  infosFichier(projet: string, publicId: string): Promise<InfosFichier | null>
+  /** Dossiers à la racine du projet, par nom. */
+  dossiersRacine(projet: string): Promise<Dossier[]>
   fichier(projet: string, publicId: string): Promise<Fichier | null>
   /** Un fichier mis à la corbeille ne se lit plus, même par un jeton encore valable. */
   fichierActif(id: string): Promise<boolean>
@@ -75,6 +103,25 @@ export function ouvrirBase(adresse: string): Base {
         permissions: l.permissions ?? [],
         projet: { id: l.projet, publicId: l.publicId, origines: l.origines ?? [] },
       }
+    },
+
+    async infosFichier(projet, publicId) {
+      const [l] = await sql<(Omit<InfosFichier, 'size'> & { size: string })[]>`
+        SELECT f."publicId" AS id, f."originalName" AS name, f.extension, f."mimeType", f.size::text AS size, f.checksum,
+          d."publicId" AS "folderId", lower(f.status::text) AS status, f."durationSeconds", f.width, f.height,
+          to_char(f."createdAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+          to_char(f."updatedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
+        FROM files f LEFT JOIN folders d ON d.id = f."folderId"
+        WHERE f."projectId" = ${projet} AND f."publicId" = ${publicId} AND f.status IN ('ACTIVE', 'TRASHED')`
+      return l ? { ...l, size: Number(l.size) } : null
+    },
+
+    async dossiersRacine(projet) {
+      return sql<Dossier[]>`
+        SELECT "publicId" AS id, name,
+          to_char("createdAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+          to_char("updatedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
+        FROM folders WHERE "projectId" = ${projet} AND "parentId" IS NULL ORDER BY name`
     },
 
     async fichier(projet, publicId) {

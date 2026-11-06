@@ -18,6 +18,7 @@ Vercel pour tout le reste (téléversements, dossiers, administration).
 |---|---|
 | `POST /api/v1/files/:id/signed-url` | Même contrat que l'application. Vérifie la clé API et ses permissions dans la base, puis rend un lien `/l/<jeton>` vers le Worker. |
 | `GET` / `HEAD /l/<jeton>` | Sert le fichier par plages, depuis Google Drive. |
+| `GET /api/v1/files/:id`, `GET /api/v1/folders` (racine) | Informations d'un fichier et dossiers racine, lus dans la base : un client en a besoin pour afficher une image (Moziik : `/media`). |
 | `GET /sante` | `{ "ok": true }`. |
 | Tout le reste | Relayé tel quel à `ORIGINE` (l'application). |
 

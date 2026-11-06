@@ -1,5 +1,5 @@
 import { parseRange } from '../../../src/lib/files/range'
-import { ouvrirBase, type Base } from './base'
+import { ouvrirBase, type Base, type CleApi } from './base'
 import { chiffrerLecture, dechiffrer, empreinte, lireLecture, type Lecture } from './chiffrement'
 import { ErreurDrive, lireDrive } from './drive'
 
@@ -17,8 +17,10 @@ import { ErreurDrive, lireDrive } from './drive'
  *   lien rendu pointe vers ce Worker (/l/<jeton>) ; le jeton chiffré porte
  *   le fichier à servir, sans ligne en base.
  * - GET|HEAD /l/<jeton> : sert le fichier par plages, depuis Google Drive.
- * - tout le reste (téléversements, dossiers, liens à usage compté, autres
- *   fournisseurs que Drive) est relayé tel quel à ORIGINE.
+ * - GET /api/v1/files/:id et GET /api/v1/folders (racine) : les lectures
+ *   d'informations qu'un client fait avant d'afficher un fichier.
+ * - tout le reste (téléversements, écritures, sous-dossiers, liens à usage
+ *   compté, autres fournisseurs que Drive) est relayé tel quel à ORIGINE.
  */
 
 export interface Env {
@@ -61,10 +63,57 @@ function nomDispositif(telechargement: boolean, nom: string): string {
   return `${telechargement ? 'attachment' : 'inline'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nom)}`
 }
 
-async function signer(requete: Request, env: Env, deps: Dependances, base: () => Base, publicId: string): Promise<Response> {
-  const copie = requete.clone()
+/**
+ * La clé API de la requête, vérifiée comme `authenticate()` de l'application :
+ * empreinte connue, ni révoquée ni expirée, projet désigné cohérent. Une
+ * réponse d'erreur sinon.
+ */
+async function authentifier(requete: Request, env: Env, base: () => Base): Promise<CleApi | Response> {
   const cle = (requete.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   if (!API_KEY_PATTERN.test(cle)) return erreur(401, 'unauthorized', 'Clé API invalide.')
+  const k = await base().cleApi(await empreinte(cle, env.API_SECRET))
+  if (!k || k.revoquee) return erreur(401, 'unauthorized', 'Clé API invalide ou révoquée.')
+  if (k.expire !== null && k.expire <= Date.now()) return erreur(401, 'unauthorized', 'Clé API expirée.')
+  const ref = requete.headers.get('x-project') ?? new URL(requete.url).searchParams.get('project')
+  if (ref && ref !== k.projet.publicId) return erreur(403, 'forbidden', 'Cette clé n’est pas valable pour ce projet.')
+  return k
+}
+
+function exiger(k: CleApi, ...requises: string[]): Response | null {
+  const manquantes = requises.filter((p) => !k.permissions.includes(p))
+  return manquantes.length ? erreur(403, 'forbidden', `Permission manquante : ${manquantes.join(', ')}.`) : null
+}
+
+/**
+ * Lectures d'informations dont un client a besoin pour afficher un fichier
+ * (Moziik : pochettes et images par /media). Servies ici pour qu'elles ne
+ * dépendent pas de l'application ; toute écriture lui reste.
+ */
+async function infosFichier(requete: Request, env: Env, base: () => Base, publicId: string): Promise<Response> {
+  const k = await authentifier(requete, env, base)
+  if (k instanceof Response) return k
+  const refus = exiger(k, 'files:read')
+  if (refus) return refus
+  const file = await base().infosFichier(k.projet.id, publicId)
+  if (!file) return erreur(404, 'not_found', 'Fichier introuvable.')
+  return Response.json({ success: true, file }, { headers: { 'Cache-Control': 'no-store' } })
+}
+
+async function dossiers(requete: Request, env: Env, base: () => Base): Promise<Response> {
+  const k = await authentifier(requete, env, base)
+  if (k instanceof Response) return k
+  const refus = exiger(k, 'folders:read')
+  if (refus) return refus
+  const liste = await base().dossiersRacine(k.projet.id)
+  return Response.json(
+    { success: true, folders: liste.map((d) => ({ ...d, parentId: null, files: null, folders: null })), path: [] },
+    { headers: { 'Cache-Control': 'no-store' } },
+  )
+}
+
+async function signer(requete: Request, env: Env, deps: Dependances, base: () => Base, publicId: string): Promise<Response> {
+  const copie = requete.clone()
+  if (!API_KEY_PATTERN.test((requete.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''))) return erreur(401, 'unauthorized', 'Clé API invalide.')
 
   let corps: { type?: unknown; expiresIn?: unknown; maxUses?: unknown }
   try {
@@ -80,15 +129,11 @@ async function signer(requete: Request, env: Env, deps: Dependances, base: () =>
     return erreur(400, 'bad_request', `type « stream » ou « download », expiresIn entier de ${MIN_TTL} à ${MAX_TTL} secondes.`)
   }
 
-  const k = await base().cleApi(await empreinte(cle, env.API_SECRET))
-  if (!k || k.revoquee) return erreur(401, 'unauthorized', 'Clé API invalide ou révoquée.')
-  if (k.expire !== null && k.expire <= Date.now()) return erreur(401, 'unauthorized', 'Clé API expirée.')
-  const ref = requete.headers.get('x-project') ?? new URL(requete.url).searchParams.get('project')
-  if (ref && ref !== k.projet.publicId) return erreur(403, 'forbidden', 'Cette clé n’est pas valable pour ce projet.')
+  const k = await authentifier(requete, env, base)
+  if (k instanceof Response) return k
   // Comme l'application : un lien de téléchargement exige déjà le droit de télécharger.
-  const requises = ['links:create', type === 'download' ? 'download:read' : 'stream:read']
-  const manquantes = requises.filter((p) => !k.permissions.includes(p))
-  if (manquantes.length) return erreur(403, 'forbidden', `Permission manquante : ${manquantes.join(', ')}.`)
+  const refus = exiger(k, 'links:create', type === 'download' ? 'download:read' : 'stream:read')
+  if (refus) return refus
 
   const f = await base().fichier(k.projet.id, publicId)
   if (!f || !f.objet) return erreur(404, 'not_found', 'Fichier introuvable.')
@@ -193,6 +238,10 @@ export function creerLecteur(deps: Dependances) {
         if (lien && (requete.method === 'GET' || requete.method === 'HEAD')) return await servir(requete, env, deps, ouvrir, ctx, lien[1]!)
         const signe = /^\/api\/v1\/files\/([^/]+)\/signed-url$/.exec(url.pathname)
         if (signe && requete.method === 'POST') return await signer(requete, env, deps, ouvrir, decodeURIComponent(signe[1]!))
+        const fichier = /^\/api\/v1\/files\/([^/]+)$/.exec(url.pathname)
+        if (fichier && requete.method === 'GET') return await infosFichier(requete, env, ouvrir, decodeURIComponent(fichier[1]!))
+        // Sous-dossiers et fil d'Ariane restent à l'application : seule la racine sert aux clients.
+        if (url.pathname === '/api/v1/folders' && requete.method === 'GET' && !url.searchParams.get('parentId')) return await dossiers(requete, env, ouvrir)
         return await relayer(requete, env, deps.recuperer)
       } catch (e) {
         console.error('erreur du Worker de lecture :', e)

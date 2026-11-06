@@ -77,6 +77,25 @@ function banc(options: { permissions?: string[]; actif?: boolean; type?: string 
   const base = async (): Promise<Base> => ({
     cleApi: async (h) => (h === (await empreinte(CLE, ENV.API_SECRET)) ? cle : null),
     fichier: async (projet, id) => (projet === 'prj1' && id === 'file_abc' ? fichier : null),
+    infosFichier: async (projet, id) =>
+      projet === 'prj1' && id === 'file_abc'
+        ? {
+            id: 'file_abc',
+            name: 'Pochette.jpg',
+            extension: 'jpg',
+            mimeType: 'image/jpeg',
+            size: 1000,
+            checksum: null,
+            folderId: 'fld_images',
+            status: 'active',
+            durationSeconds: null,
+            width: 600,
+            height: 600,
+            createdAt: '2026-10-20T10:00:00.000Z',
+            updatedAt: '2026-10-20T10:00:00.000Z',
+          }
+        : null,
+    dossiersRacine: async () => [{ id: 'fld_songs', name: 'songs', createdAt: '2026-10-20T10:00:00.000Z', updatedAt: '2026-10-20T10:00:00.000Z' }],
     fichierActif: async () => options.actif ?? true,
     compterOuverture: async (id) => void comptes.push(id),
     fournisseur: async () => ({ type: options.type ?? 'GOOGLE_DRIVE', identifiants: encrypt('rafraichissement', ENV.ENCRYPTION_KEY) }),
@@ -184,12 +203,45 @@ describe('Worker de lecture', () => {
     assert.equal((await b2.requete('/l/pas-un-jeton')).status, 404)
   })
 
+  it('donne les informations d’un fichier et les dossiers racine, sans passer par l’application', async () => {
+    const b = banc({ permissions: ['files:read', 'folders:read'] })
+    await b.pret()
+    const lire = (chemin: string) => b.requete(chemin, { headers: { Authorization: `Bearer ${CLE}` } })
+    const r = await lire('/api/v1/files/file_abc')
+    assert.equal(r.status, 200)
+    assert.deepEqual(((await r.json()) as { file: { mimeType: string; folderId: string; status: string } }).file, {
+      id: 'file_abc',
+      name: 'Pochette.jpg',
+      extension: 'jpg',
+      mimeType: 'image/jpeg',
+      size: 1000,
+      checksum: null,
+      folderId: 'fld_images',
+      status: 'active',
+      durationSeconds: null,
+      width: 600,
+      height: 600,
+      createdAt: '2026-10-20T10:00:00.000Z',
+      updatedAt: '2026-10-20T10:00:00.000Z',
+    })
+    assert.equal((await lire('/api/v1/files/file_zzz')).status, 404)
+    const d = (await (await lire('/api/v1/folders')).json()) as { folders: { id: string; name: string; parentId: null }[] }
+    assert.deepEqual(d.folders.map((x) => [x.id, x.name, x.parentId]), [['fld_songs', 'songs', null]])
+    assert.equal(b.appels.length, 0)
+    // Sans la permission, refus ; sans clé, refus.
+    const sansDroit = banc()
+    await sansDroit.pret()
+    assert.equal((await sansDroit.requete('/api/v1/files/file_abc', { headers: { Authorization: `Bearer ${CLE}` } })).status, 403)
+    assert.equal((await b.requete('/api/v1/folders')).status, 401)
+  })
+
   it('relaie à l’application le reste : autres routes, liens à usage compté, autres fournisseurs', async () => {
     const b = banc()
     await b.pret()
-    const dossiers = await b.requete('/api/v1/folders?x=1')
-    assert.equal(dossiers.status, 299)
-    assert.equal(b.appels.at(-1)!.url, 'https://stockage.exemple/api/v1/folders?x=1')
+    const sousDossiers = await b.requete('/api/v1/folders?parentId=fld_1')
+    assert.equal(sousDossiers.status, 299)
+    assert.equal(b.appels.at(-1)!.url, 'https://stockage.exemple/api/v1/folders?parentId=fld_1')
+    assert.equal((await b.requete('/api/v1/folders', demander({ name: 'images' }))).status, 299)
     assert.equal((await b.requete('/api/v1/files/file_abc/signed-url', demander({ maxUses: 1 }))).status, 299)
     const s3 = banc({ type: 'S3' })
     await s3.pret()
