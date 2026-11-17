@@ -24,6 +24,22 @@ export class StorageUnavailableError extends ProviderError {
   }
 }
 
+/**
+ * Les identifiants d'un espace de stockage, avec la clé du déploiement, puis
+ * avec la clé secondaire si elle est fournie : un espace relié depuis un
+ * autre déploiement (serveur local) a été chiffré avec la clé de celui-ci.
+ * Sans ce repli, la lecture passait par le Worker (qui connaît les deux
+ * clés) mais tout envoi vers cet espace échouait ici.
+ */
+function dechiffrerIdentifiants(valeur: string): string {
+  try {
+    return decrypt(valeur, env.ENCRYPTION_KEY)
+  } catch (erreur) {
+    if (!env.ENCRYPTION_KEY_SECONDAIRE) throw erreur
+    return decrypt(valeur, env.ENCRYPTION_KEY_SECONDAIRE)
+  }
+}
+
 export function providerFor(row: ProviderRow): StorageProvider {
   const version = row.updatedAt.getTime()
   const cached = instances.get(row.id)
@@ -33,7 +49,7 @@ export function providerFor(row: ProviderRow): StorageProvider {
   if (row.kind === 'S3') {
     const config = s3Config(row)
     if (!config || !row.credentials) throw new StorageUnavailableError('Le stockage S3 n’est pas configuré.')
-    const keys = JSON.parse(decrypt(row.credentials, env.ENCRYPTION_KEY)) as { accessKeyId: string; secretAccessKey: string }
+    const keys = JSON.parse(dechiffrerIdentifiants(row.credentials)) as { accessKeyId: string; secretAccessKey: string }
     provider = new S3Provider({
       ...config,
       ...keys,
@@ -48,7 +64,7 @@ export function providerFor(row: ProviderRow): StorageProvider {
     provider = new LocalProvider(env.LOCAL_STORAGE_DIR)
   } else {
     const refreshToken = row.credentials
-      ? decrypt(row.credentials, env.ENCRYPTION_KEY)
+      ? dechiffrerIdentifiants(row.credentials)
       : env.GOOGLE_REFRESH_TOKEN
     if (!isGoogleConfigured || !refreshToken) {
       throw new StorageUnavailableError('Google Drive n’est pas connecté.')

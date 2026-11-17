@@ -18,6 +18,12 @@ const schema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET : 32 caractères au moins'),
   API_SECRET: z.string().min(32, 'API_SECRET : 32 caractères au moins'),
   ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY : 32 caractères au moins'),
+  /**
+   * Clé d'un autre déploiement (serveur local de gros imports, par exemple)
+   * qui a relié des espaces de stockage : leurs identifiants ne se
+   * déchiffrent qu'avec elle. Même rôle que dans le Worker de lecture.
+   */
+  ENCRYPTION_KEY_SECONDAIRE: optional,
 
   GOOGLE_CLIENT_ID: optional,
   GOOGLE_CLIENT_SECRET: optional,
