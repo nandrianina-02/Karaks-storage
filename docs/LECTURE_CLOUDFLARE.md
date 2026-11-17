@@ -8,6 +8,10 @@ ce transfert à 10 Go par mois ; au-delà, le déploiement est désactivé
 (`402 DEPLOYMENT_DISABLED`) et plus aucun titre ne se lit. C'est arrivé à
 `nuvora-cloud`, puis à `moziik-cloud`.
 
+Depuis, l'application tourne sur `karaks-storage.vercel.app` (variable
+`ORIGINE` du Worker) et ne sert plus que le reste : elle ne transfère plus
+les fichiers, et reste donc loin du plafond.
+
 Cloudflare ne facture pas le transfert. Le Worker `workers/lecture` prend
 donc en charge la seule partie lourde, la lecture ; l'application reste sur
 Vercel pour tout le reste (téléversements, dossiers, administration).
@@ -68,7 +72,7 @@ connexions ; le Worker n'ouvre qu'une connexion locale. Hyperdrive est inclus
 dans l'offre gratuite des Workers.
 
 Les secrets sont ceux du déploiement Vercel qui sert la production
-(`moziik-cloud`). Une valeur différente rend les clés API ou les connexions
+(`karaks-storage`, auparavant `moziik-cloud`). Une valeur différente rend les clés API ou les connexions
 Drive illisibles. `GOOGLE_REFRESH_TOKEN` n'est utile que si un fournisseur
 Drive n'a pas de jeton enregistré en base. `DATABASE_URL` ne sert que sans
 Hyperdrive ; une fois Hyperdrive en place, le secret peut être retiré

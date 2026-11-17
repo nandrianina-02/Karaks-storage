@@ -12,8 +12,10 @@
 		"enabled": true
 	},
 	"vars": {
-		// L'application Karaks Storage : tout ce qui n'est pas la lecture lui est relayé.
-		"ORIGINE": "https://moziik-cloud.vercel.app"
+		// L'application Karaks Storage : tout ce qui n'est pas la lecture lui est relayé
+		// (téléversements, dossiers, administration). Elle doit lire la même base
+		// que le Worker, sans quoi un fichier envoyé n'existerait pas pour la lecture.
+		"ORIGINE": "https://karaks-storage.vercel.app"
 	},
 	// Accès à Supabase par Hyperdrive : Cloudflare tient la connexion chiffrée
 	// et la réserve de connexions. Créé une fois avec
